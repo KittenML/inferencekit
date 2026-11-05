@@ -4,7 +4,7 @@ description: Writes and audits inference performance claims so they survive revi
 license: Apache-2.0
 compatibility: Uses the inferencekit CLI (Python 3.10+, uv or uvx) or its MCP server; needs no GPU. Written for Claude Code, Codex and OpenCode.
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Reporting performance claims

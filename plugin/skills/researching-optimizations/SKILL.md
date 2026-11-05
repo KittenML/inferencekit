@@ -4,7 +4,7 @@ description: Find current, applicable inference optimizations and turn them into
 license: Apache-2.0
 compatibility: Needs web/repository search or supplied source material. No GPU or paid action is required for research. Verify installed tool versions before using examples.
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Research to an experiment

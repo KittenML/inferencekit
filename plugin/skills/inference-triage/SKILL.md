@@ -4,7 +4,7 @@ description: "Route inference performance questions for text, image, audio, vide
 license: Apache-2.0
 compatibility: Uses the inferencekit CLI (Python 3.10+, uv or uvx) or its MCP server. NVIDIA GPUs are fully supported (profiling needs Nsight); AMD ROCm, x86 CPUs and Apple Silicon are guided by references/hardware.md. Written for Claude Code, Codex and OpenCode.
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Inference triage
@@ -92,7 +92,7 @@ Triage:
 | Report | `inferencekit report <ids...> --format md` | `report` |
 | Analyse a profile the person supplied (no GPU) | `inferencekit nsys analyze <file>` / `inferencekit ncu summarize <file> --peak-gbs <ev or GB/s>` | `analyze_nsys` / `summarize_ncu` |
 
-MCP clients prefix tool names (Claude Code: `mcp__plugin_inferencekit_inferencekit__roofline`); the arguments are the CLI's. **MCP server does not start** (no `uvx`, no network): the CLI at this plugin's version, `uv tool install "inferencekit-cli==0.1.0"`. **In OpenCode,** long steps (`bench rounds`, `gates run`, quality runs, `ceiling bw`, captures) go through the CLI, detached with a log: it ends an MCP call after the server's `timeout` (120 s), and the server sends no progress. Bandwidth: your GPU's measured `inferencekit ceiling bw` (off NVIDIA, the platform's micro-benchmark: [references/hardware.md](references/hardware.md)), or say the ceiling is datasheet-based and therefore unreachable.
+MCP clients prefix tool names (Claude Code: `mcp__plugin_inferencekit_inferencekit__roofline`); the arguments are the CLI's. **MCP server does not start** (no `uvx`, no network): the CLI at this plugin's version, `uv tool install "inferencekit-cli==0.1.1"`. **In OpenCode,** long steps (`bench rounds`, `gates run`, quality runs, `ceiling bw`, captures) go through the CLI, detached with a log: it ends an MCP call after the server's `timeout` (120 s), and the server sends no progress. Bandwidth: your GPU's measured `inferencekit ceiling bw` (off NVIDIA, the platform's micro-benchmark: [references/hardware.md](references/hardware.md)), or say the ceiling is datasheet-based and therefore unreachable.
 
 ## Symptom routing
 

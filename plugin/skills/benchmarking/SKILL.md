@@ -4,7 +4,7 @@ description: Measure end-to-end inference latency, throughput, memory and cost a
 license: Apache-2.0
 compatibility: Needs the inferencekit CLI (Python 3.10+, uv or uvx) or its MCP server, each engine at a pinned version (any OpenAI-compatible server), and an NVIDIA GPU for the full tool set (elsewhere ceiling bw is NOT RUN; roofline with a numeric --gpu-bw needs no GPU). Written for Claude Code, Codex and OpenCode.
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Benchmarking inference speed

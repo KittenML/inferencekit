@@ -4,7 +4,7 @@ description: Optimize a model for faster responses, more requests, less memory o
 license: Apache-2.0
 compatibility: Needs inferencekit (Python 3.10+, uv or uvx), the target runtime and git. NVIDIA, AMD, Apple Silicon and CPU tools differ; unsupported measurements stay NOT RUN. Written for Claude Code, Codex and OpenCode.
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Optimize inference

@@ -6,4 +6,4 @@ the result does NOT show (``limitations``). Records are content-addressed, so a
 report can cite exactly the numbers it used.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

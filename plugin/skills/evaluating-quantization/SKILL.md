@@ -4,7 +4,7 @@ description: Choose a compressed model format by measuring memory, complete-requ
 license: Apache-2.0
 compatibility: Needs inferencekit (Python 3.10+, uv or uvx), a compatible runtime and the workload's quality reference/adapter. Header-based fit research needs no GPU; measurements require authorized hardware. Text examples use text endpoints; media uses native pipelines.
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Evaluating quantization
