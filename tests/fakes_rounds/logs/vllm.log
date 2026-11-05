@@ -1,0 +1,14 @@
+(APIServer pid=4120) INFO 10-13 09:12:01 [api_server.py:1885] vLLM API server version 0.11.0
+(APIServer pid=4120) INFO 10-13 09:12:01 [utils.py:286] non-default args: {'model_tag': 'Qwen/Qwen3-8B', 'model': 'Qwen/Qwen3-8B', 'max_model_len': 8192, 'gpu_memory_utilization': 0.9, 'hf_token': '***'}
+(APIServer pid=4120) WARNING 10-13 09:12:02 [interface.py:1458] Unknown vLLM environment variable detected: VLLM_ATTENTON_BACKEND
+(EngineCore_DP0 pid=4301) INFO 10-13 09:12:09 [core.py:93] Initializing a V1 LLM engine (v0.11.0) with config: model='Qwen/Qwen3-8B', speculative_config=None, tokenizer='Qwen/Qwen3-8B', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=8192, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_fallback=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None), seed=0, served_model_name=Qwen/Qwen3-8B, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={"level":3,"debug_dump_path":"","cache_dir":"","backend":"","custom_ops":[],"splitting_ops":["vllm::unified_attention"],"use_inductor":true,"cudagraph_mode":[2,1],"cudagraph_capture_sizes":[512,504,16,8,4,2,1],"max_capture_size":512}
+(EngineCore_DP0 pid=4301) INFO 10-13 09:12:12 [cuda.py:508] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].
+(EngineCore_DP0 pid=4301) INFO 10-13 09:12:40 [gpu_model_runner.py:5150] Model loading took 15.2683 GiB memory and 12.512812 seconds
+(EngineCore_DP0 pid=4301) WARNING 10-13 09:12:58 [fused_moe.py:888] Using default MoE config. Performance might be sub-optimal!
+(EngineCore_DP0 pid=4301) INFO 10-13 09:13:05 [kv_cache_utils.py:1087] GPU KV cache size: 79,232 tokens
+(EngineCore_DP0 pid=4301) INFO 10-13 09:13:05 [kv_cache_utils.py:1091] Maximum concurrency for 8,192 tokens per request: 9.67x
+(EngineCore_DP0 pid=4301) Capturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|##########| 67/67 [00:03<00:00, 19.82it/s]
+(EngineCore_DP0 pid=4301) Capturing CUDA graphs (decode, FULL): 100%|##########| 35/35 [00:01<00:00, 22.10it/s]
+(EngineCore_DP0 pid=4301) INFO 10-13 09:13:11 [gpu_model_runner.py:6582] Graph capturing finished in 6 secs, took 0.62 GiB
+(APIServer pid=4120) INFO:     Started server process [4120]
+(APIServer pid=4120) INFO:     Application startup complete.

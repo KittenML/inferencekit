@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:inferencekit:schema:intake:v1",
+  "title": "inferencekit intake v1",
+  "description": "Input of the optimizing-inference flow: what to make fast, on what, for which goal, inside which budget. Written as YAML (intake.yaml); JSON works too. Validate with `inferencekit intake validate <file>`. Unknown keys are reported as warnings (probably typos), not errors.",
+  "type": "object",
+  "required": ["model", "modality", "hardware"],
+  "additionalProperties": false,
+  "properties": {
+    "intake_version": {"const": 1},
+    "run_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
+               "description": "Directory name under runs/. Default: <model>-<gpu>-<UTC date>."},
+    "model": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "description": "Hugging Face id (org/name) or a local path."},
+        "revision": {"type": "string", "minLength": 1,
+                     "description": "Commit sha to pin. A branch name (main) is resolved to a sha at stage 1 and recorded."},
+        "precision": {"type": "string", "minLength": 1,
+                      "description": "Precision the checkpoint is stored in, e.g. nvfp4, fp8, bf16, q8_0."},
+        "architecture_changes": {"enum": ["forbid", "allow", "ask"], "default": "forbid", "description": "Separate permission for pruning, distillation, skipped model components or replacement. A lossy quality preference does not grant this permission."},
+        "precision_allowed": {"type": "array", "minItems": 1, "uniqueItems": true,
+                              "items": {"type": "string", "minLength": 1},
+                              "description": "Weight/activation precisions engines may run. Default: [precision]. Rows outside the checkpoint's own precision are a separate track."},
+        "kv_cache_dtype_allowed": {"type": "array", "minItems": 1, "uniqueItems": true,
+                                   "items": {"type": "string", "minLength": 1},
+                                   "description": "KV cache dtypes allowed. Default: [checkpoint_default] (what the checkpoint config specifies, else the activation dtype)."},
+        "tokenizer": {"type": "string", "minLength": 1, "description": "Default: model.id."}
+      }
+    },
+    "modality": {"enum": ["llm", "tts", "stt", "video", "image"]},
+    "hardware": {
+      "type": "object",
+      "required": ["gpu"],
+      "additionalProperties": false,
+      "properties": {
+        "gpu": {"type": "string", "minLength": 1, "description": "GPU model, e.g. RTX 5090."},
+        "count": {"type": "integer", "minimum": 1, "default": 1},
+        "price_usd_h": {"type": "number", "exclusiveMinimum": 0,
+                        "description": "Hourly price of the whole host (all `count` GPUs) in USD."},
+        "access": {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"enum": ["ssh", "local"]},
+            "host": {"type": "string", "minLength": 1},
+            "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "user": {"type": "string", "minLength": 1},
+            "key_path": {"type": "string", "minLength": 1}
+          },
+          "if": {"properties": {"kind": {"const": "ssh"}}},
+          "then": {"required": ["host", "user"]}
+        }
+      }
+    },
+    "goals": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lead": {"enum": ["single_user", "capacity", "affordability"], "default": "single_user"},
+        "affordability": {
+          "type": "object", "additionalProperties": false,
+          "required": ["memory_gb_max", "memory_kind"],
+          "description": "Minimize memory while meeting latency and quality gates; compare with each baseline tuned for minimum memory under the same gates. GB means decimal GB; record observed bytes too.",
+          "properties": {
+            "memory_gb_max": {"type": "number", "exclusiveMinimum": 0},
+            "stretch_memory_gb_max": {"type": "number", "exclusiveMinimum": 0},
+            "memory_kind": {"enum": ["vram", "unified", "host"]},
+            "host_memory_gb_max": {"type": "number", "exclusiveMinimum": 0},
+            "offload_allowed": {"type": "boolean", "default": false}
+          }
+        },
+        "targets": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Optional. A missed target means continue (within budget). What happens once every target is met is goals.after_target. Without a target, an interactive run asks at the stop point unless after_target keep_climbing is written; a non_interactive run keeps climbing while budget remains, or stops after the stop-point ranking when after_target stop is written.",
+          "properties": {
+            "decode_tok_s": {"type": "number", "exclusiveMinimum": 0},
+            "ttft_ms": {"type": "number", "exclusiveMinimum": 0},
+            "n_star": {"type": "integer", "minimum": 1},
+            "decode_ceiling_fraction": {"type": "number", "exclusiveMinimum": 0, "maximum": 1,
+                                        "description": "Decode tok/s as a fraction of the measured-bandwidth roofline ceiling."},
+            "ttfa_ms": {"type": "number", "exclusiveMinimum": 0, "description": "TTS: time to first audio."},
+            "ttfa_p95_ms": {"type": "number", "exclusiveMinimum": 0, "description": "TTS: p95 client time to first playable audio, including preprocessing and buffering."},
+            "image_ms": {"type": "number", "exclusiveMinimum": 0, "description": "Image: client time to final decoded image."},
+            "images_per_hour": {"type": "number", "exclusiveMinimum": 0},
+            "rtf": {"type": "number", "exclusiveMinimum": 0, "description": "TTS/STT: real-time factor (compute time / audio time; lower is better)."},
+            "usd_per_1m": {"type": "number", "exclusiveMinimum": 0, "description": "Cost per 1M output units (tokens, characters, audio-seconds)."},
+            "clip_ms": {"type": "number", "exclusiveMinimum": 0, "description": "Video: client-timed end-to-end ms per clip at the intake's clip set (bench clip clip_ms; lower is better)."},
+            "clips_per_hour": {"type": "number", "exclusiveMinimum": 0, "description": "Video: clips per hour, one clip at a time (bench clip clips_per_hour; higher is better)."},
+            "buckets": {"type": "array", "minItems": 1, "uniqueItems": true,
+                        "items": {"enum": ["very_short", "short", "medium", "long"]},
+                        "description": "Buckets the target must hold in (all of them). Default: every intake bucket."}
+          }
+        },
+        "slo": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttft_p95_ms": {"type": "number", "exclusiveMinimum": 0},
+            "tpot_p95_ms": {"type": "number", "exclusiveMinimum": 0},
+            "max_fail": {"type": "integer", "minimum": 0, "default": 0}
+          }
+        },
+        "after_target": {"enum": ["stop", "keep_climbing"],
+                         "description": "What the flow does once every target is met: stop (and write the report) or keep_climbing (keep improving until the budget ends, recording the best result over time, screened or verified). Default: keep_climbing when non_interactive or when budget.gpu_hours, usd or wall_clock_h is set; else stop. budget.usd ends a climbing run only with hardware.price_usd_h (validate warns otherwise). The constraint string 'after_target: <value>' is still accepted; when both are given they must agree."},
+        "traffic": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Capacity goal: expected traffic shape.",
+          "properties": {
+            "arrival_rate_rps": {"type": "number", "exclusiveMinimum": 0},
+            "burstiness": {"type": "string"},
+            "session_len": {"type": "string"}
+          }
+        }
+      }
+    },
+    "io_modes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input": {"enum": ["complete", "streaming"], "default": "complete"},
+        "output": {"enum": ["complete", "streaming"], "default": "streaming"},
+        "input_rate": {"type": "string", "description": "Streaming input pace, e.g. '30 tok/s' or '40 ms audio chunks at 1x'."},
+        "latency_focus": {"type": "string", "description": "Which latency matters most, in the user's words."}
+      }
+    },
+    "buckets": {"type": "array", "minItems": 1, "uniqueItems": true,
+                "items": {"enum": ["very_short", "short", "medium", "long"]}},
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_tokens": {"type": "integer", "minimum": 2, "default": 256},
+        "rounds": {"type": "integer", "minimum": 3, "default": 5},
+        "concurrency": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 1}},
+        "prompt_set": {"type": "string", "default": "dev"},
+        "chat_template_kwargs": {"type": "object", "description": "Pre-registered template settings, e.g. {\"enable_thinking\": false} for a reasoning model. The intake itself sends nothing: intake validate records the pin in intake.normalized.json and state.json; manifest validate and bench rounds refuse a run manifest whose workload.chat_template_kwargs leaves out or changes a pinned key; bench serve, gates run and quality trajectory/gsm8k/niah with --run-dir add the pinned keys to every chat request and refuse a different value."}
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gpu_hours": {"type": "number", "exclusiveMinimum": 0, "description": "GPU-hours (host hours x count)."},
+        "usd": {"type": "number", "exclusiveMinimum": 0},
+        "wall_clock_h": {"type": "number", "exclusiveMinimum": 0},
+        "approved": {"type": "boolean", "default": false},
+        "spend_cap": {"enum": ["bounded", "none"], "default": "bounded",
+                      "description": "Explicit run-scoped uncapped-spend approval. none requires approved:true plus a finite deadline or wall_clock_h, and conflicts with usd/gpu_hours. Null numeric caps mean uncapped; never use a huge numeric sentinel."},
+        "deadline": {"type": "string", "minLength": 1, "description": "Absolute ISO8601 deadline with timezone; enforced even when spending is uncapped."},
+        "stage_timeboxes": {"type": "boolean", "default": true, "description": "false explicitly disables per-stage time cutoffs for this run; the overall deadline still applies."},
+        "report_reserve_h": {"type": "number", "minimum": 0, "description": "Explicit run-scoped reporting reserve; zero disables the automatic early reporting/freeze cutoff. Validate continuously and keep artifacts ready through the deadline."}
+      }
+    },
+    "fidelity": {"enum": ["lossless", "lossy"], "default": "lossless",
+                 "description": "lossless (default): numerics stay as shipped (weights and activations in model.precision; no KV cache below 16 bits unless the checkpoint ships one); other entries of precision_allowed / kv_cache_dtype_allowed are reported as levers, not run or ranked. Only changes that leave the output distribution unchanged count. lossy: changes that alter numerics are allowed when every bound in quality.budget holds against the reference; they are a separate track, reported as speed at a stated quality cost and never ranked against lossless results. The constraint string 'fidelity: <value>' is still accepted; when both are given they must agree."},
+    "interaction": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "checkpoints": {"enum": ["required", "quality", "milestones"], "default": "required", "description": "Pause only for new required decisions, also for human quality review, or at major milestones. Never waives spending/scope or quality requirements."},
+        "show_plan": {"type": "boolean", "default": false, "description": "Show a plan only when requested; does not by itself require plan approval."}
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preference": {"enum": ["exact", "balanced", "speed"], "description": "Simple opening choice: identical declared deterministic/seeded outputs; small numerical differences with task quality preserved; or prioritize speed within an agreed quality budget. exact resolves fidelity to lossless, others to lossy. Does not itself prove equality, fill quality bounds, allow formats or authorize model changes."},
+        "reference": {
+          "oneOf": [
+            {"const": "none"},
+            {"type": "object", "required": ["kind"], "additionalProperties": false,
+             "properties": {"kind": {"const": "none"}}},
+            {"type": "object", "required": ["kind", "base_url"], "additionalProperties": false,
+             "properties": {"kind": {"const": "endpoint"}, "base_url": {"type": "string", "minLength": 1},
+                            "model": {"type": "string"}}}
+          ]
+        },
+        "acceptance": {"enum": ["perceptual_and_task_noninferiority"], "description": "Explicit image/TTS acceptance through hash-bound external blinded perceptual plus task-quality proof. Requires typed relative task/perceptual bounds. Numerical similarity and cross-engine equality are diagnostic; historical gates/results are not rewritten."},
+        "diagnostic_only": {"type": "array", "minItems": 1, "uniqueItems": true,
+                            "items": {"enum": ["lpips", "ssim", "psnr", "cross_engine_byte_identity", "cross_engine_tensor_equality", "rounding_drift", "eager_compiled_drift", "repeated_run_variation", "cross_engine_pcm_equality", "cross_engine_generated_code_equality"]},
+                            "description": "Declared diagnostic comparisons, never acceptance thresholds. Requires explicit perceptual/task acceptance; only image/TTS-applicable keys are accepted. Own output integrity and finite/shape contracts remain hard requirements."},
+        "protocol": {"type": "string", "minLength": 1, "description": "Pre-registered modality quality protocol: dataset, seeds, reference, metrics/margins, A/A floor and CI decision rules; external evidence is required where the CLI has no modality adapter."},
+        "protocol_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA256 of the external quality protocol bytes; required for quality.budget.relative. Intake validation checks the declaration, not external evidence."},
+        "noise_floor": {"oneOf": [{"const": "measure"}, {"type": "number", "minimum": 0, "maximum": 1}],
+                        "description": "'measure' (A/A run of the reference) or a fixed agreement floor in [0, 1]."},
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "description": "The quality budget of a lossy run, declared before any measurement: every bound given must hold against the reference. Required when fidelity is lossy (an error in a non_interactive run; an interactive run warns and agrees it before ranking a lossy change). Legacy absolute budgets are ignored, with a warning, when fidelity is lossless; relative budgets require fidelity lossy.",
+          "properties": {
+            "gsm8k_drop_pts_max": {"type": "number", "minimum": 0,
+                                   "description": "Largest acceptable GSM8K accuracy drop against the reference, in percentage points (paired, judged on the CI)."},
+            "top1_agreement_min": {"type": "number", "minimum": 0, "maximum": 1,
+                                   "description": "Lowest acceptable next-token (top-1) agreement with the reference, a fraction in [0, 1]."},
+            "kl_max": {"type": "number", "minimum": 0,
+                       "description": "Largest acceptable mean KL divergence per token from the reference's next-token distribution, in nats."},
+            "nll_increase_max": {"type": "number", "minimum": 0,
+                                 "description": "Largest acceptable increase in the reference's NLL per token on the candidate's outputs, in nats."},
+            "tv_max": {"type": "number", "minimum": 0, "maximum": 1,
+                       "description": "Largest acceptable mean total variation distance between the reference's and the candidate's next-token distributions (top-k with the tail imputed), in [0, 1]."},
+            "wer_max": {"type": "number", "minimum": 0, "description": "TTS/STT: maximum word error rate as a fraction."},
+            "cer_max": {"type": "number", "minimum": 0, "description": "TTS/STT: maximum character error rate as a fraction."},
+            "speaker_similarity_min": {"type": "number", "minimum": -1, "maximum": 1, "description": "TTS: minimum speaker embedding cosine similarity."},
+            "psnr_db_min": {"type": "number", "description": "Video (quality clip, lossy): minimum mean PSNR vs the reference, dB."},
+            "ssim_min": {"type": "number", "minimum": 0, "maximum": 1, "description": "Video (quality clip, lossy): minimum mean SSIM vs the reference."},
+            "lpips_max": {"type": "number", "minimum": 0, "description": "Video (quality clip, lossy): maximum mean LPIPS vs the reference."},
+            "relative": {
+              "type": "object", "additionalProperties": false, "required": ["modality"], "minProperties": 2,
+              "description": "Typed relative degradation bounds for a hash-bound external image/TTS/STT quality protocol. Positive increase/drop is worse; these are not absolute scorer thresholds. Only metric keys for the declared intake modality are valid; unknown keys are errors. Protocol defines reference/A/A adjustment, units, cohort and CI rules. Finite values only.",
+              "allOf": [
+                {"if": {"properties": {"modality": {"const": "image"}}}, "then": {"propertyNames": {"enum": ["modality", "lpips_excess_max", "ssim_loss_max", "ocr_cer_increase_max", "semantic_score_drop_max", "new_severe_regressions_max"]}}},
+                {"if": {"properties": {"modality": {"const": "tts"}}}, "then": {"propertyNames": {"enum": ["modality", "wer_increase_max", "cer_increase_max", "completion_failure_increase_max", "speaker_similarity_drop_max", "perceptual_score_drop_max", "new_severe_regressions_max"]}}},
+                {"if": {"properties": {"modality": {"const": "stt"}}}, "then": {"propertyNames": {"enum": ["modality", "wer_increase_max", "cer_increase_max", "completion_failure_increase_max", "new_severe_regressions_max"]}}}
+              ],
+              "properties": {
+                "modality": {"enum": ["image", "tts", "stt"]},
+                "lpips_excess_max": {"type": "number", "minimum": 0, "description": "Image: maximum protocol-defined excess LPIPS over the reference/A/A floor; lower is better."},
+                "ssim_loss_max": {"type": "number", "minimum": 0, "maximum": 2, "description": "Image: maximum protocol-defined SSIM loss relative to reference/A/A; lower is better, not absolute SSIM."},
+                "ocr_cer_increase_max": {"type": "number", "minimum": 0, "description": "Image: maximum OCR CER increase, as a fraction; lower is better. CER can exceed one."},
+                "semantic_score_drop_max": {"type": "number", "minimum": 0, "maximum": 1, "description": "Image: maximum drop on a normalized [0,1] semantic score; lower degradation is better."},
+                "wer_increase_max": {"type": "number", "minimum": 0, "description": "TTS/STT: maximum WER increase as a fraction; lower is better. WER can exceed one."},
+                "cer_increase_max": {"type": "number", "minimum": 0, "description": "TTS/STT: maximum CER increase as a fraction; lower is better. CER can exceed one."},
+                "completion_failure_increase_max": {"type": "number", "minimum": 0, "maximum": 1, "description": "TTS/STT: maximum increase in completion failure rate, an absolute fraction; lower is better."},
+                "speaker_similarity_drop_max": {"type": "number", "minimum": 0, "maximum": 2, "description": "TTS: maximum drop in speaker cosine similarity in [-1,1]; lower degradation is better."},
+                "perceptual_score_drop_max": {"type": "number", "minimum": 0, "description": "TTS: maximum perceptual score drop in the external protocol's declared units; lower degradation is better."},
+                "new_severe_regressions_max": {"type": "integer", "minimum": 0, "description": "Image/TTS/STT: maximum count of new severe regressions; lower is better. Zero forbids new severe regressions."}
+              }
+            }
+          }
+        }
+      }
+    },
+    "repo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "branch": {"type": "string", "minLength": 1},
+        "push": {"enum": ["ask", "never"], "default": "ask"}
+      }
+    },
+    "constraints": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}],
+                    "description": "Free text, one quoted string per entry (an unquoted 'a: b' is a YAML mapping, which is refused). Validate reads these conventions (several in one entry when separated by ';'): 'after_target: stop|keep_climbing', 'fidelity: lossless|lossy', 'speculation: off|auto', 'route: build|patch'."},
+    "rule_sources": {"type": "object", "additionalProperties": false,
+                     "description": "Written by intake validate into the normalized intake; leave it out of a hand-written one. Where each run rule came from: its field name, 'constraints' or 'default: ...'. A filled-in default keeps its source when a normalized intake is checked again.",
+                     "properties": {"after_target": {"type": "string"}, "fidelity": {"type": "string"},
+                                    "speculation": {"type": "string"}, "route": {"type": "string"}}},
+    "non_interactive": {"type": "boolean", "default": false},
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How to install inferencekit on the GPU host (ssh access).",
+      "properties": {
+        "wheel": {"type": "string", "minLength": 1},
+        "wheel_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "requirements": {"type": "string", "minLength": 1}
+      }
+    },
+    "candidates": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "include": {"type": "array", "items": {"type": "string"}},
+        "exclude": {"type": "array", "items": {"type": "string"}},
+        "max_engines": {"type": "integer", "minimum": 1, "maximum": 8, "default": 5}
+      }
+    }
+  }
+}

@@ -1,0 +1,212 @@
+{
+  "name": "dev-load",
+  "version": "1.0",
+  "n": 1280,
+  "buckets": {
+    "short": 1000,
+    "medium": 280
+  },
+  "sha256": "fe42629d968dbf37e75cb0a5bd7c00d0605190845f2c27e1942b7428b6120632",
+  "sealed": false,
+  "role": "load",
+  "seed": "inferencekit-prompts-v1",
+  "max_tokens": 256,
+  "length_proxy": "proxy_tokens = whitespace words * 1.3",
+  "bucket_rules": {
+    "very_short": {
+      "words": [
+        1,
+        5
+      ]
+    },
+    "short": {
+      "proxy_tokens": [
+        20,
+        50
+      ]
+    },
+    "medium": {
+      "proxy_tokens": [
+        240,
+        360
+      ]
+    },
+    "long": {
+      "proxy_tokens": [
+        2000,
+        4000
+      ]
+    }
+  },
+  "split_rule": "sha256(seed|split|group): even first byte -> dev, odd -> sealed; group = sha256 of the normalised dolly context (else the normalised instruction / question; long: the book); one candidate per group; near-duplicates (>50% shared 12-word shingles with the dev sets or the same split) dropped",
+  "selection": "ranked by sha256(seed|rank|split|bucket|key) within the split",
+  "secret_sha256": null,
+  "secret_rule": null,
+  "exclusions": {
+    "rows": 19,
+    "sha256": "7e90005d3c4f0c9f5f55479b3b6f59379a21dd9853dd03cec509b899f32b6644",
+    "rule": "rows listed in exclusions.json or flagged by the private leak-scanner rules"
+  },
+  "sources": [
+    {
+      "name": "databricks-dolly-15k",
+      "license": "CC-BY-SA-3.0",
+      "url": "https://huggingface.co/datasets/databricks/databricks-dolly-15k/resolve/bdd27f4d94b9c1f951818a7da7fd7aeea5dbff1a/databricks-dolly-15k.jsonl",
+      "sha256": "2df9083338b4abd6bceb5635764dab5d833b393b55759dffb0959b6fcbf794ec"
+    },
+    {
+      "name": "gsm8k-train",
+      "license": "MIT",
+      "url": "https://raw.githubusercontent.com/openai/grade-school-math/3101c7d5072418e28b9008a6636bde82a006892c/grade_school_math/data/train.jsonl",
+      "sha256": "17f347dc51477c50d4efb83959dbb7c56297aba886e5544ee2aaed3024813465"
+    },
+    {
+      "name": "gutenberg-11",
+      "title": "Alice's Adventures in Wonderland (Lewis Carroll)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/11/pg11.txt",
+      "sha256": "01b38ea4c710a84bc18d0bd41271a5a1a92b94e97b2812f4dece97d4a694725e"
+    },
+    {
+      "name": "gutenberg-35",
+      "title": "The Time Machine (H. G. Wells)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/35/pg35.txt",
+      "sha256": "2892e919000e17c83e1dac51b30f4675db50536b644d7579fe8a89bb399a9bdc"
+    },
+    {
+      "name": "gutenberg-36",
+      "title": "The War of the Worlds (H. G. Wells)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/36/pg36.txt",
+      "sha256": "8417469e3ab664749f7b36ebb85799075818207b0380b54c27d07d592a44117d"
+    },
+    {
+      "name": "gutenberg-43",
+      "title": "The Strange Case of Dr Jekyll and Mr Hyde (R. L. Stevenson)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/43/pg43.txt",
+      "sha256": "b43448a88391591f9cf82b25553df00faf47a2752a873185fcdd1156eebdb990"
+    },
+    {
+      "name": "gutenberg-76",
+      "title": "Adventures of Huckleberry Finn (Mark Twain)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/76/pg76.txt",
+      "sha256": "d617a37aa7ae1e1a93dcde2634db2bccb86824e31e29a55230bdbf77d6872d59"
+    },
+    {
+      "name": "gutenberg-84",
+      "title": "Frankenstein (Mary Shelley)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/84/pg84.txt",
+      "sha256": "7810cd483cffcf2cc8a1d8f0d5807931e69d4f48cd14149b8c76f88af82fead3"
+    },
+    {
+      "name": "gutenberg-98",
+      "title": "A Tale of Two Cities (Charles Dickens)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/98/pg98.txt",
+      "sha256": "d54c2b80d40a40b982cd88852c6180bb944d95acdb028af3d0e01a1750681784"
+    },
+    {
+      "name": "gutenberg-120",
+      "title": "Treasure Island (R. L. Stevenson)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/120/pg120.txt",
+      "sha256": "5bc08275eacea8640b1aa185c645283bb8c564d7b23df6b03437d229b4fc6ebd"
+    },
+    {
+      "name": "gutenberg-158",
+      "title": "Emma (Jane Austen)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/158/pg158.txt",
+      "sha256": "532b122b4e6a76cc556d6fdcd729b5892f5c4ce4a1b7060b9f832adfad8680dc"
+    },
+    {
+      "name": "gutenberg-161",
+      "title": "Sense and Sensibility (Jane Austen)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/161/pg161.txt",
+      "sha256": "22272ec4d4da2f50cda51edf34ab8486b325c4a99580120db565fb8917228a22"
+    },
+    {
+      "name": "gutenberg-174",
+      "title": "The Picture of Dorian Gray (Oscar Wilde)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/174/pg174.txt",
+      "sha256": "38f36b510417177aa87a6a24c968e3ec63a447b7df36a9c1a7c5a3f2d9e51547"
+    },
+    {
+      "name": "gutenberg-215",
+      "title": "The Call of the Wild (Jack London)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/215/pg215.txt",
+      "sha256": "30f569c5671bba7bbc4a92ab6d8ee01a0d3be00f994819c77da62c28041eb8a2"
+    },
+    {
+      "name": "gutenberg-219",
+      "title": "Heart of Darkness (Joseph Conrad)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/219/pg219.txt",
+      "sha256": "1bcdf0a1ac611dd6b70a20d100a07085754da4e90a949d6031717b86cd6d020a"
+    },
+    {
+      "name": "gutenberg-345",
+      "title": "Dracula (Bram Stoker)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/345/pg345.txt",
+      "sha256": "96cd16eacdbfebae8fdda5591f66e0cc8ee76be18e0cd1aca02bc00615782d28"
+    },
+    {
+      "name": "gutenberg-768",
+      "title": "Wuthering Heights (Emily Bronte)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/768/pg768.txt",
+      "sha256": "e533fe750589f0421d5d744576315f5c2b9b0d69e981179ea0551bbf134c5e02"
+    },
+    {
+      "name": "gutenberg-1260",
+      "title": "Jane Eyre (Charlotte Bronte)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/1260/pg1260.txt",
+      "sha256": "13414dee2951c3ee731d76d2ffd822016b2479c892162760c5d0eb2aa5fa7631"
+    },
+    {
+      "name": "gutenberg-1342",
+      "title": "Pride and Prejudice (Jane Austen)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/1342/pg1342.txt",
+      "sha256": "3f6bb9d6f78e0293b56acd4714dd68cb7d6d1d293402031ce9d5a216bcaf9d75"
+    },
+    {
+      "name": "gutenberg-1400",
+      "title": "Great Expectations (Charles Dickens)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/1400/pg1400.txt",
+      "sha256": "9a637118af8e953e9764ec603d9b0a032883384d465acac2e27966a80cf1c6f8"
+    },
+    {
+      "name": "gutenberg-1661",
+      "title": "The Adventures of Sherlock Holmes (Arthur Conan Doyle)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/1661/pg1661.txt",
+      "sha256": "922e2a12ccb43a4c9544c260b2166c6ad2097aeb5957faeee113f173bb857cd0"
+    },
+    {
+      "name": "gutenberg-2554",
+      "title": "Crime and Punishment (Fyodor Dostoevsky, tr. Constance Garnett)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/2554/pg2554.txt",
+      "sha256": "d139120965c81f10e3f747d891a49babdb49d986b25f7ab25299b1bbf4731146"
+    },
+    {
+      "name": "gutenberg-2701",
+      "title": "Moby Dick (Herman Melville)",
+      "license": "public-domain",
+      "url": "https://www.gutenberg.org/cache/epub/2701/pg2701.txt",
+      "sha256": "b5e88b71a1cda068e9ab1d94344c9d932338ba6da1a66def97a1aecd9cfcc87d"
+    }
+  ],
+  "builder": "scripts/build_prompts.py (inferencekit prompts build / seal)"
+}

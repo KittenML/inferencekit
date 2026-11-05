@@ -1,0 +1,30 @@
+{
+  "name": "inferencekit",
+  "version": "0.1.0",
+  "description": "Make your model serve faster on your GPU, and prove it. Skills for Claude Code, Codex and OpenCode, plus a CLI and MCP server: your agent picks and tunes inference engines, can write GPU kernels, and backs every number with client-timed benchmarks, anti-cheat gates and quality checks.",
+  "author": {
+    "name": "Stellon Labs"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "inference",
+    "llm",
+    "serving",
+    "benchmarking",
+    "capacity",
+    "profiling",
+    "quantization",
+    "roofline",
+    "gpu",
+    "nvidia",
+    "cuda",
+    "mcp",
+    "nsight-systems",
+    "nsight-compute",
+    "correctness",
+    "vllm",
+    "sglang",
+    "llama.cpp",
+    "tensorrt-llm"
+  ]
+}

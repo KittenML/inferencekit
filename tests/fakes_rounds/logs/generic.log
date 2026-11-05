@@ -1,0 +1,3 @@
+loading weights from /models/custom
+WARNING: tokenizer has no chat template, using a default one
+serving OpenAI-compatible API on 0.0.0.0:9000

@@ -1,0 +1,143 @@
+{
+ "manifest_version": 1,
+ "model": {
+  "id": "Qwen/Qwen3-8B-FP8",
+  "revision": "220b46e3b2180893580a4454f21f22d3ebb187d3",
+  "precision": "fp8",
+  "tokenizer": "Qwen/Qwen3-8B-FP8"
+ },
+ "hardware": {
+  "gpu": "RTX 5090",
+  "count": 1,
+  "price_usd_h": 0.6
+ },
+ "engines": [
+  {
+   "name": "vllm",
+   "label": "baseline-recipe",
+   "version": "0.31.0",
+   "install": [
+    "uv venv --python 3.12 /opt/vllm-0.31.0",
+    "uv pip install --python /opt/vllm-0.31.0/bin/python vllm==0.31.0 --torch-backend=auto"
+   ],
+   "launch": [
+    "vllm",
+    "serve",
+    "Qwen/Qwen3-8B-FP8",
+    "--revision",
+    "220b46e3b2180893580a4454f21f22d3ebb187d3",
+    "--tokenizer-revision",
+    "220b46e3b2180893580a4454f21f22d3ebb187d3",
+    "--served-model-name",
+    "qwen3-8b-fp8",
+    "--seed",
+    "0",
+    "--max-model-len",
+    "8192",
+    "--gpu-memory-utilization",
+    "0.90",
+    "--no-enable-prefix-caching",
+    "--max-logprobs",
+    "20",
+    "--default-chat-template-kwargs",
+    "{\"enable_thinking\": false}",
+    "--port",
+    "8100"
+   ],
+   "env": {},
+   "port": 8100,
+   "ready_check": "/v1/models",
+   "resolved_config": {
+    "quantization": "fp8 (block 128x128) via DeepGemmFp8BlockScaledMMKernel, DeepGEMM E8M0",
+    "kv_cache_dtype": "auto (bf16)",
+    "attention_backend": "FLASH_ATTN (FlashAttention 2)",
+    "cudagraph_mode": "FULL_AND_PIECEWISE",
+    "prefix_caching": false,
+    "source": "startup log: 'Selected DeepGemmFp8BlockScaledMMKernel for Fp8LinearMethod', 'DeepGEMM E8M0 enabled', 'Using FLASH_ATTN attention backend'"
+   },
+   "role": "baseline-recipe"
+  },
+  {
+   "name": "vllm-fastdec (vLLM 0.31.0 + fastdec plugin; vLLM request fields)",
+   "label": "fastdec",
+   "version": "vllm 0.31.0 + fastdec 0.1.0",
+   "install": [
+    "uv venv --python 3.12 /opt/fastdec-vllm",
+    "uv pip install --python /opt/fastdec-vllm/bin/python vllm==0.31.0 --torch-backend=auto",
+    "uv pip install --python /opt/fastdec-vllm/bin/python ../../fastdec"
+   ],
+   "launch": [
+    "vllm-fastdec",
+    "serve",
+    "Qwen/Qwen3-8B-FP8",
+    "--revision",
+    "220b46e3b2180893580a4454f21f22d3ebb187d3",
+    "--tokenizer-revision",
+    "220b46e3b2180893580a4454f21f22d3ebb187d3",
+    "--served-model-name",
+    "qwen3-8b-fp8",
+    "--seed",
+    "0",
+    "--max-model-len",
+    "8192",
+    "--gpu-memory-utilization",
+    "0.90",
+    "--no-enable-prefix-caching",
+    "--max-logprobs",
+    "20",
+    "--default-chat-template-kwargs",
+    "{\"enable_thinking\": false}",
+    "--port",
+    "8000"
+   ],
+   "env": {
+    "HF_HUB_OFFLINE": "1",
+    "VLLM_NO_USAGE_STATS": "1",
+    "DO_NOT_TRACK": "1"
+   },
+   "port": 8000,
+   "ready_check": "/v1/models",
+   "resolved_config": {
+    "quantization": "fp8 (block 128x128); M=1 decode GEMMs in fastdec Triton GEMV, larger M in DeepGEMM E8M0",
+    "kv_cache_dtype": "auto (bf16)",
+    "attention_backend": "FLASH_ATTN (FlashAttention 2), vLLM default, as the baseline",
+    "cudagraph_mode": "FULL_AND_PIECEWISE",
+    "prefix_caching": false,
+    "lm_head": "fastdec exact bound-pruned head for prunable requests, full BF16 head otherwise",
+    "source": "startup log: 'fastdec: patches applied (gemv=1, prune=1, check=False)', 'fastdec: pruned output layer ready', 'fastdec gemv: w (...)' lines"
+   },
+   "role": "custom"
+  }
+ ],
+ "workload": {
+  "modes": [
+   "single"
+  ],
+  "buckets": [
+   "very_short",
+   "short",
+   "medium",
+   "long"
+  ],
+  "max_tokens": 256,
+  "chat_template_kwargs": {
+   "enable_thinking": false
+  },
+  "extra_body": {
+   "temperature": 0.6,
+   "top_k": 20,
+   "top_p": 0.95,
+   "seed": 0
+  }
+ },
+ "harness": {
+  "inferencekit_version": "0.2.1",
+  "wheel_sha256": "",
+  "dev_prompt_set_sha256": "736717af715d14e64540b64f359372cc0aa0c611584167d61c12d918995592b6"
+ },
+ "agent_run": {
+  "run_id": "qwen3-8b-fp8-5090-20261015",
+  "started": "2026-10-15T19:20:00Z",
+  "ended": "2026-10-15T21:00:00Z"
+ }
+}

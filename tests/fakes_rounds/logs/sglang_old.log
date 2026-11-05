@@ -1,0 +1,3 @@
+[2025-05-02 10:00:00] server_args=ServerArgs(model_path='Qwen/Qwen3-8B', tokenizer_path='Qwen/Qwen3-8B', dtype='auto', kv_cache_dtype='fp8_e5m2', quantization=None, attention_backend='triton', sampling_backend='flashinfer', disable_cuda_graph=True, cuda_graph_max_bs=None, tp_size=1, json_model_override_args='{}', random_seed=1)
+[2025-05-02 10:00:08 TP0] Load weight end. type=Qwen3ForCausalLM, dtype=torch.bfloat16, avail mem=14.62 GB, mem usage=15.40 GB.
+[2025-05-02 10:00:12] The server is fired up and ready to roll!

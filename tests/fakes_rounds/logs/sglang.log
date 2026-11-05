@@ -1,0 +1,9 @@
+[2026-10-13 09:20:01] server_args={'model_path': 'Qwen/Qwen3-8B', 'tokenizer_path': 'Qwen/Qwen3-8B', 'dtype': 'auto', 'kv_cache_dtype': 'auto', 'quantization': None, 'context_length': None, 'mem_fraction_static': 0.835, 'max_running_requests': None, 'chunked_prefill_size': 8192, 'attention_backend': 'flashinfer', 'sampling_backend': 'flashinfer', 'disable_cuda_graph': False, 'cuda_graph_max_bs': 160, 'enable_torch_compile': False, 'tp_size': 1, 'random_seed': 42, 'api_key': None}
+[2026-10-13 09:20:09 TP0] Load weight end. elapsed=7.92 s, type=Qwen3ForCausalLM, avail mem=14.62 GB, mem usage=15.40 GB.
+[2026-10-13 09:20:10 TP0] KV Cache is allocated. #tokens: 96512, K size: 6.63 GB, V size: 6.63 GB
+[2026-10-13 09:20:10 TP0] Capture cuda graph begin. This can take up to several minutes. avail mem=1.21 GB
+[2026-10-13 09:20:14 TP0] Capture cuda graph end. Time elapsed: 3.87 s. mem usage=0.41 GB. avail mem=0.80 GB.
+[2026-10-13 09:20:15 TP0] max_total_num_tokens=96512, chunked_prefill_size=8192, max_prefill_tokens=16384, max_running_requests=2048, context_len=40960, available_gpu_mem=0.80 GB
+[2026-10-13 09:20:16] WARNING server_args.py:812: Overlap scheduler is disabled because of using eagle speculative decoding.
+[2026-10-13 09:20:17] INFO:     Uvicorn running on http://127.0.0.1:30000 (Press CTRL+C to quit)
+[2026-10-13 09:20:18] The server is fired up and ready to roll!

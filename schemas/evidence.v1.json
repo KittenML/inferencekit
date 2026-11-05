@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:inferkit:schema:evidence:v1",
+  "title": "inferkit evidence record, version 1",
+  "description": "One measurement or derivation, content-addressed: evidence_id = 'ev_' + sha256 of the canonical JSON (sorted keys, no whitespace) of every other field.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "evidence_id", "kind", "claim_class", "summary", "identity", "provenance",
+               "metrics", "artifacts", "coverage", "limitations", "data"],
+  "properties": {
+    "schema": {"const": "inferkit.evidence.v1"},
+    "evidence_id": {"type": "string", "pattern": "^ev_[0-9a-f]{64}$"},
+    "kind": {
+      "enum": ["environment", "roofline", "ceiling", "benchmark", "nsys_capture", "nsys_timeline",
+               "ncu_capture", "ncu_kernels", "correctness", "comparison"]
+    },
+    "claim_class": {
+      "description": "observed = measured on hardware; derived = computed from other evidence or a model config; inferred = a judgement that goes beyond the data.",
+      "enum": ["observed", "derived", "inferred"]
+    },
+    "summary": {"type": "string", "maxLength": 600},
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gpu", "engine", "model", "workload"],
+      "properties": {
+        "gpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {"$ref": "#/$defs/optString"},
+            "count": {"$ref": "#/$defs/optInt"},
+            "driver": {"$ref": "#/$defs/optString"},
+            "cuda": {"$ref": "#/$defs/optString"},
+            "clocks": {"enum": ["default", "locked", null]}
+          }
+        },
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {"$ref": "#/$defs/optString"},
+            "version": {"$ref": "#/$defs/optString"},
+            "commit": {"$ref": "#/$defs/optString"},
+            "flags": {"type": "object"}
+          }
+        },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {"$ref": "#/$defs/optString"},
+            "revision": {"$ref": "#/$defs/optString"},
+            "dtype": {"$ref": "#/$defs/optString"},
+            "quant": {"$ref": "#/$defs/optString"}
+          }
+        },
+        "workload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prompt_len": {"$ref": "#/$defs/optInt"},
+            "gen_len": {"$ref": "#/$defs/optInt"},
+            "batch": {"$ref": "#/$defs/optInt"},
+            "seed": {"$ref": "#/$defs/optInt"}
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tool", "tool_version", "argv_digest", "started", "ended"],
+      "properties": {
+        "tool": {"type": "string"},
+        "tool_version": {"type": "string"},
+        "argv_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "started": {"type": "string"},
+        "ended": {"type": "string"}
+      }
+    },
+    "metrics": {"type": "array", "items": {"$ref": "#/$defs/metric"}},
+    "artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifact"}},
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "missing"],
+      "properties": {
+        "complete": {"type": "boolean"},
+        "missing": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "data": {"type": "object"}
+  },
+  "$defs": {
+    "optString": {"type": ["string", "null"]},
+    "optInt": {"type": ["integer", "null"]},
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value", "unit", "stat"],
+      "properties": {
+        "name": {"type": "string"},
+        "value": {"type": ["number", "null"]},
+        "unit": {"type": "string"},
+        "stat": {"type": "string"},
+        "n": {"type": ["integer", "null"]},
+        "ci95": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": ["number", "null"]}}
+          ]
+        },
+        "subject": {"type": "string", "description": "What the metric is about when a record holds several subjects (a kernel name, a buffer size)."}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": {"type": "string", "description": "Relative to the record's run directory, unless role is 'input'."},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "bytes": {"type": "integer", "minimum": 0},
+        "role": {"type": "string"}
+      }
+    }
+  }
+}

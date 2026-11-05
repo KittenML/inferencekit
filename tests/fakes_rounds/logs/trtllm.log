@@ -1,0 +1,6 @@
+[TensorRT-LLM] TensorRT-LLM version: 1.0.0
+[10/13/2026-09:30:01] [TRT-LLM] [I] Using LLM with PyTorch backend
+[10/13/2026-09:30:02] [TRT-LLM] [W] Overriding max_num_tokens from the checkpoint config.
+[10/13/2026-09:30:40] [TRT-LLM] [I] LLM Args:
+model='Qwen/Qwen3-8B' tokenizer=None tokenizer_mode='auto' skip_tokenizer_init=False trust_remote_code=False tensor_parallel_size=1 dtype='auto' revision=None backend='pytorch' max_batch_size=2048 max_num_tokens=8192 max_seq_len=None max_beam_width=1 attn_backend='TRTLLM' cuda_graph_config=CudaGraphConfig(batch_sizes=[1, 2, 4, 8], max_batch_size=8, enable_padding=False) kv_cache_config=KvCacheConfig(enable_block_reuse=True, max_tokens=None, free_gpu_memory_fraction=0.9, dtype='auto') enable_chunked_prefill=False
+[10/13/2026-09:31:02] [TRT-LLM] [I] Application startup complete.
