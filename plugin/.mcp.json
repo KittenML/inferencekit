@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "inferencekit": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "inferencekit-cli[mcp]==0.1.0",
+        "inferencekit",
+        "mcp",
+        "serve"
+      ]
+    }
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inferencekit.dev/schemas/run-manifest.v1.json",
+  "title": "inferencekit run manifest v1",
+  "description": "What an agent ran: model at a pinned revision, hardware, every engine with its install and launch commands, the workload and the frozen harness. A re-run of the manifest replays exactly this on a clean host. Semantic rules that JSON Schema cannot express (unique engine labels, distinct ports, no secret values in env) are checked by `inferencekit manifest validate`.",
+  "type": "object",
+  "required": ["manifest_version", "model", "hardware", "engines", "workload", "harness", "agent_run"],
+  "additionalProperties": false,
+  "properties": {
+    "manifest_version": {"const": 1},
+    "model": {
+      "type": "object",
+      "required": ["id", "revision"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "description": "Hugging Face repo id (org/name)."},
+        "revision": {"type": "string", "description": "Full 40-character commit sha of the model repo (a branch or tag can move)."},
+        "precision": {"type": "string", "description": "Weight precision class, e.g. bf16, fp8, nvfp4, q8_0."},
+        "tokenizer": {"type": "string", "description": "Tokenizer repo id, when it differs from the model."},
+        "tokenizer_revision": {"type": "string"},
+        "local_dir": {"type": "string", "pattern": "^(?!/)(?!~)(?!.*(^|/)\\.\\.(/|$)).+$", "description": "Where launch commands expect the weights, relative to the re-run's working directory (the uploaded copy of the agent's run directory), e.g. models/qwen3-8b. A re-run runs `hf download <id> --revision <revision> --local-dir <local_dir>`. Without it the model goes to the HF cache and launch commands must name the repo id and the revision."}
+      }
+    },
+    "hardware": {
+      "type": "object",
+      "required": ["gpu", "count"],
+      "additionalProperties": false,
+      "properties": {
+        "gpu": {"type": "string", "minLength": 1, "description": "GPU model as nvidia-smi names it, or a substring of that name (e.g. 'RTX 5090')."},
+        "count": {"type": "integer", "minimum": 1},
+        "price_usd_h": {"type": ["number", "null"], "minimum": 0}
+      }
+    },
+    "engines": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "label", "install", "launch", "port"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string", "minLength": 1, "description": "Engine family: vllm, sglang, llamacpp, trtllm, custom..."},
+          "label": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", "description": "Unique label for this engine + configuration; used as a directory name."},
+          "version": {"type": "string"},
+          "install": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "Shell commands run in order inside this engine's own venv (VIRTUAL_ENV is set)."},
+          "launch": {"type": "array", "minItems": 1, "items": {"type": "string"}, "description": "Server argv (no shell)."},
+          "env": {"type": "object", "additionalProperties": {"type": ["string", "null"]}, "description": "Environment for the server. null = inherit that variable from the caller (e.g. a token). Never secret values: name secrets in a re-run instead."},
+          "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+          "host": {"type": "string", "minLength": 1, "description": "Address the harness connects to (default 127.0.0.1). A re-run runs every engine on the host it measures, so it must be a loopback address."},
+          "cwd": {"type": "string", "pattern": "^(?!/)(?!~)(?!.*(^|/)\\.\\.(/|$)).+$", "description": "Working directory of the server, relative to the re-run's working directory (the uploaded copy of the agent's run directory). Default: that directory."},
+          "ready_check": {"type": "string", "description": "HTTP path polled until it returns 200, e.g. /v1/models or /health."},
+          "resolved_config": {"type": "object", "description": "What the engine logged it actually used."},
+          "role": {"enum": ["baseline-recipe", "tuned", "custom"]},
+          "endpoint_kind": {"enum": ["clip_http", "comfyui"], "description": "bench rounds --mode clip: how bench clip reaches the engine (default clip_http)."},
+          "workflow": {"type": "string", "description": "comfyui: the API-format workflow JSON (a path relative to the manifest is resolved there)."}
+        }
+      }
+    },
+    "workload": {
+      "type": "object",
+      "required": ["modes"],
+      "if": {"properties": {"modes": {"contains": {"const": "clip"}}}, "required": ["modes"]},
+      "then": {"required": ["clips"]},
+      "else": {"required": ["buckets", "max_tokens"]},
+      "additionalProperties": false,
+      "properties": {
+        "modes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["single", "load", "clip"]}},
+        "clips": {"type": "string", "description": "Clip set JSONL for --mode clip (sha256 pinned by bench clip records)."},
+        "buckets": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["very_short", "short", "medium", "long"]}},
+        "max_tokens": {"type": "integer", "minimum": 1},
+        "slo": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttft_p95_ms": {"type": ["number", "null"], "exclusiveMinimum": 0},
+            "tpot_p95_ms": {"type": ["number", "null"], "exclusiveMinimum": 0},
+            "max_fail": {"type": ["number", "null"], "minimum": 0}
+          }
+        },
+        "concurrency": {"type": "array", "items": {"type": "integer", "minimum": 1}},
+        "rate_rps": {"type": "array", "items": {"type": "number", "exclusiveMinimum": 0}},
+        "seed": {"type": "integer"},
+        "chat_template_kwargs": {"type": "object", "description": "Sent as chat_template_kwargs on every chat request to every engine (bench serve, bench rounds, gates run, quality trajectory), e.g. {\"enable_thinking\": false} to pin a reasoning model's template; a prompt record's own chat_template_kwargs field is merged over it per key. When the run's intake pins workload.chat_template_kwargs (intake.normalized.json next to the manifest), every pinned key must be here with the pinned value (manifest validate, bench rounds and a re-run refuse otherwise)."},
+        "extra_body": {
+          "type": "object",
+          "description": "Merged last into the body of every timed request to every engine: bench rounds passes it to each bench serve call as --extra-body (bench rounds --extra-body overrides it). Use it to time sampling instead of greedy decoding, e.g. {\"temperature\": 1.0, \"top_k\": 64, \"top_p\": 0.95, \"seed\": 1234}. Absent: bench serve times greedy decoding (temperature 0) on every engine. manifest validate refuses fields that change what is timed or how it is read (model, messages, prompt, stream, stream_options, max_tokens, max_completion_tokens, n, best_of, ignore_eos, min_tokens, stop, stop_token_ids, logit_bias, return_token_ids, return_tokens_as_token_ids, logprobs, top_logprobs, echo, suffix), chat_template_kwargs (use workload.chat_template_kwargs) and secret-looking keys; it warns when top_k, top_p, min_p or seed come without a temperature above 0 (bench serve stays greedy).",
+          "properties": {
+            "temperature": {"type": "number", "minimum": 0},
+            "top_p": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+            "top_k": {"type": "integer", "minimum": -1, "description": "-1 (or 0 on some engines) disables top-k."},
+            "min_p": {"type": "number", "minimum": 0, "maximum": 1},
+            "seed": {"type": "integer"}
+          }
+        }
+      }
+    },
+    "harness": {
+      "type": "object",
+      "required": ["inferencekit_version", "wheel_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "inferencekit_version": {"type": "string", "minLength": 1},
+        "wheel_sha256": {"type": "string", "description": "sha256 of the inferencekit-cli wheel the agent ran (64 hex). Empty only while drafting; a re-run refuses it."},
+        "dev_prompt_set_sha256": {"type": "string"}
+      }
+    },
+    "agent_run": {
+      "type": "object",
+      "required": ["run_id"],
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {"type": "string"},
+        "started": {"type": "string"},
+        "ended": {"type": "string"}
+      }
+    }
+  }
+}

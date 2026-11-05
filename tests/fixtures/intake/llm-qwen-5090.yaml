@@ -1,0 +1,67 @@
+# Unattended run: an NVFP4 LLM checkpoint on one rented RTX 5090, reached over ssh.
+# Replace every <placeholder>, then: inferencekit intake validate llm-qwen-5090.yaml --run-dir runs/<run-id>
+intake_version: 1
+
+model:
+  id: <hf-org>/<qwen-checkpoint-nvfp4>   # the exact checkpoint every engine loads
+  revision: "<40-hex commit sha>"        # quoted; a branch name is resolved to a sha at stage 1
+  precision: nvfp4                       # stored precision; precision_allowed defaults to [nvfp4]
+  kv_cache_dtype_allowed: [checkpoint_default]
+
+modality: llm
+
+hardware:
+  gpu: RTX 5090
+  count: 1
+  price_usd_h: 0.60                      # whole-host hourly price
+  access:
+    kind: ssh                            # inferencekit and every engine run on the GPU host
+    host: <gpu-host>
+    port: 22
+    user: <user>
+    key_path: ~/.ssh/<key>
+
+goals:
+  lead: single_user
+  targets:
+    decode_ceiling_fraction: 0.70        # >= 70% of the measured-bandwidth ceiling ...
+    buckets: [short, medium]             # ... in both of these buckets
+  after_target: keep_climbing            # once met, keep improving until the budget ends (the unattended default)
+  slo:
+    ttft_p95_ms: 500
+    tpot_p95_ms: 50
+
+io_modes:
+  input: complete
+  output: streaming
+
+buckets: [very_short, short, medium, long]
+
+workload:
+  max_tokens: 256
+  rounds: 5
+
+budget:
+  gpu_hours: 8
+  usd: 6
+  wall_clock_h: 8
+  approved: true
+
+fidelity: lossless                       # numerics as shipped: NVFP4 weights, the checkpoint's own KV cache
+
+quality:
+  reference: none                        # or {kind: endpoint, base_url: http://<reference-host>:<port>/v1}
+  noise_floor: measure
+
+repo:
+  path: <path to the ledger repo on the agent's machine>
+  push: never
+
+constraints:
+  - no changes to precision
+  - engines must be open source
+
+non_interactive: true
+
+# harness:                               # optional: how to install inferencekit on the ssh GPU host
+#   wheel: <path to inferencekit_cli-0.1.0-py3-none-any.whl>

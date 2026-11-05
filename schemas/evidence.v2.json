@@ -1,0 +1,499 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:inferencekit:schema:evidence:v2",
+  "title": "inferencekit evidence record, version 2",
+  "description": "One measurement or derivation, content-addressed: evidence_id = 'ev_' + sha256 of the canonical JSON (sorted keys, no whitespace) of every other field. Same envelope as v1 (schema 'inferkit.evidence.v1'); v2 adds serving workloads (single-user and load modes, prompt sets, SLOs) and the kinds written by bench serve, gates, quality and the run manifest; 0.3 adds clip workloads (task, shape, steps, seed policy, clip set) and the kinds written by bench clip, gates clip and quality clip.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "evidence_id",
+    "kind",
+    "claim_class",
+    "summary",
+    "identity",
+    "provenance",
+    "metrics",
+    "artifacts",
+    "coverage",
+    "limitations",
+    "data"
+  ],
+  "properties": {
+    "schema": {
+      "const": "inferencekit.evidence.v2"
+    },
+    "evidence_id": {
+      "type": "string",
+      "pattern": "^ev_[0-9a-f]{64}$"
+    },
+    "kind": {
+      "enum": [
+        "environment",
+        "roofline",
+        "ceiling",
+        "benchmark",
+        "nsys_capture",
+        "nsys_timeline",
+        "ncu_capture",
+        "ncu_kernels",
+        "correctness",
+        "comparison",
+        "serve_benchmark",
+        "capacity",
+        "gates",
+        "quality_trajectory",
+        "quality_task",
+        "manifest",
+        "clip_benchmark",
+        "clip_gates",
+        "clip_quality",
+        "clip_steps",
+        "image_benchmark",
+        "audio_benchmark",
+        "rocprof_capture",
+        "rocprof_summary"
+      ]
+    },
+    "claim_class": {
+      "description": "observed = measured on hardware; derived = computed from other evidence or a model config; inferred = a judgement that goes beyond the data.",
+      "enum": [
+        "observed",
+        "derived",
+        "inferred"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 600
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gpu",
+        "engine",
+        "model",
+        "workload"
+      ],
+      "properties": {
+        "gpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/optString"
+            },
+            "count": {
+              "$ref": "#/$defs/optInt"
+            },
+            "driver": {
+              "$ref": "#/$defs/optString"
+            },
+            "cuda": {
+              "$ref": "#/$defs/optString"
+            },
+            "clocks": {
+              "enum": [
+                "default",
+                "locked",
+                null
+              ]
+            }
+          }
+        },
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/optString"
+            },
+            "version": {
+              "$ref": "#/$defs/optString"
+            },
+            "commit": {
+              "$ref": "#/$defs/optString"
+            },
+            "flags": {
+              "type": "object"
+            }
+          }
+        },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/optString"
+            },
+            "revision": {
+              "$ref": "#/$defs/optString"
+            },
+            "dtype": {
+              "$ref": "#/$defs/optString"
+            },
+            "quant": {
+              "$ref": "#/$defs/optString"
+            }
+          }
+        },
+        "workload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prompt_len": {
+              "$ref": "#/$defs/optInt"
+            },
+            "gen_len": {
+              "$ref": "#/$defs/optInt"
+            },
+            "batch": {
+              "$ref": "#/$defs/optInt"
+            },
+            "seed": {
+              "$ref": "#/$defs/optInt"
+            },
+            "mode": {
+              "enum": [
+                "single",
+                "load",
+                null
+              ],
+              "description": "single = one request at a time; load = open-loop arrivals (or a labelled closed-loop stress test)."
+            },
+            "bucket": {
+              "$ref": "#/$defs/optString",
+              "description": "Input bucket (very_short, short, medium, long) when the record covers one bucket; null when it covers several."
+            },
+            "concurrency": {
+              "description": "Concurrency level, or the grid of levels a load record covers.",
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              ]
+            },
+            "concurrency_source": {
+              "$ref": "#/$defs/optString",
+              "description": "How concurrency was chosen: flag, get_server_info, llamacpp_props or timing_probe (quality gsm8k --concurrency 0)."
+            },
+            "rate_rps": {
+              "description": "Offered arrival rate in requests/s, or the grid of rates a load record covers.",
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                }
+              ]
+            },
+            "duration_s": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "prompt_set": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "sha256"
+                  ],
+                  "properties": {
+                    "name": {
+                      "$ref": "#/$defs/optString"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    }
+                  }
+                }
+              ]
+            },
+            "slo": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "ttft_p95_ms": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "tpot_p95_ms": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "max_fail": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "minimum": 0
+                    }
+                  }
+                }
+              ]
+            },
+            "endpoint_kind": {
+              "$ref": "#/$defs/optString",
+              "description": "How the engine was reached, e.g. openai_chat, openai_completions, in_process; for clips clip_http (POST /v1/clips), comfyui (a ComfyUI server driven through its prompt API) or in_process (the pipeline ran inside the measuring process)."
+            },
+            "task": {
+              "enum": ["t2v", "i2v", "t2i", "tts", null],
+              "description": "Generation task: text/image-to-video, text-to-image or text-to-speech; null for mixed tasks."
+            },
+            "width": {"type": ["integer", "null"], "minimum": 1, "description": "Clips: requested width in pixels (null when clips differ)."},
+            "height": {"type": ["integer", "null"], "minimum": 1, "description": "Clips: requested height in pixels (null when clips differ)."},
+            "num_frames": {"type": ["integer", "null"], "minimum": 1, "description": "Clips: requested frames per clip (null when clips differ)."},
+            "fps": {"type": ["number", "null"], "exclusiveMinimum": 0, "description": "Clips: requested frame rate (null when clips differ)."},
+            "steps": {"type": ["integer", "null"], "minimum": 1, "description": "Clips: requested denoising steps (null when clips differ)."},
+            "guidance_scale": {"type": ["number", "null"], "minimum": 0, "description": "Clips: requested classifier-free guidance scale (null when clips differ)."},
+            "seed_policy": {
+              "description": "Clips: how each round's seed was chosen, fixed before the run. per_round = derived from base and the round index (the same for every engine in a round, different across rounds); fixed = base every round; list = the given seeds in round order.",
+              "oneOf": [
+                {"type": "null"},
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["name"],
+                  "properties": {
+                    "name": {"enum": ["per_round", "fixed", "list"]},
+                    "base": {"$ref": "#/$defs/optInt"},
+                    "rule": {"type": "string"}
+                  }
+                }
+              ]
+            },
+            "seeds": {
+              "description": "Clips: the seed of each round, in round order (round 0 first).",
+              "oneOf": [{"type": "null"}, {"type": "array", "items": {"type": "integer"}}]
+            },
+            "clip_set": {
+              "description": "Clips: the clip set file (JSONL), by name and sha256 of its bytes.",
+              "oneOf": [
+                {"type": "null"},
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["name", "sha256"],
+                  "properties": {
+                    "name": {"$ref": "#/$defs/optString"},
+                    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                  }
+                }
+              ]
+            },
+            "audio": {"type": ["boolean", "null"], "description": "Clips: whether the engine was asked for (or reported) an audio track; null when unknown."},
+            "request_set": {"oneOf": [{"type": "null"}, {"type": "object", "additionalProperties": false, "required": ["sha256"], "properties": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "n": {"type": ["integer", "null"], "minimum": 0}}}], "description": "bench serve: sha256 over the selected prompt ids and buckets and each request's max_tokens and chat_template_kwargs, plus the API, exact-length request and extra body; equal only when two records asked for exactly the same requests."},
+            "image_task_set": {"oneOf": [{"type": "null"}, {"type": "object", "additionalProperties": false, "required": ["sha256"], "properties": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "n": {"type": ["integer", "null"], "minimum": 0}}}], "description": "Image task identity excluding steps and numerical format, for explicitly labelled quality tradeoffs."},
+            "prefix_cache": {
+              "enum": ["cold", "warm", null],
+              "description": "cold = no timed request repeats an earlier prompt of the run (prefix-cache hits impossible); warm = prompts repeat across rounds on purpose, so prefill can be served from the engine's prefix cache."
+            }
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool",
+        "tool_version",
+        "argv_digest",
+        "started",
+        "ended"
+      ],
+      "properties": {
+        "tool": {
+          "type": "string"
+        },
+        "tool_version": {
+          "type": "string"
+        },
+        "argv_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "started": {
+          "type": "string"
+        },
+        "ended": {
+          "type": "string"
+        }
+      }
+    },
+    "metrics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/metric"
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "complete",
+        "missing"
+      ],
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "data": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "optString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "optInt": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value",
+        "unit",
+        "stat"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "unit": {
+          "type": "string"
+        },
+        "stat": {
+          "type": "string"
+        },
+        "n": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "ci95": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            }
+          ]
+        },
+        "subject": {
+          "type": "string",
+          "description": "What the metric is about when a record holds several subjects (a kernel name, a buffer size)."
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "bytes"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Relative to the record's run directory, unless role is 'input'."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "role": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

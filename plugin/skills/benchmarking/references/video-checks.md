@@ -1,0 +1,36 @@
+# Video reward hacks and the checks that block them
+
+A clip engine can look faster by doing less work than asked: fewer denoising steps, a smaller clip, one guidance pass instead of two, or a clip made earlier. Each row below is a hack, why it inflates the timer, and the check that catches it, or a plain statement that nothing checks it automatically. The workload is in [video.md](../../optimizing-inference/references/video.md).
+
+## Where the checks run
+
+- **`bench clip`, on every timed clip.** A mismatch between what the engine reports it ran (`effective`: steps, width, height, frames, fps) and the request, a stage reported as cached, or byte-identical clips for different requests make the claim invalid, and `compare` refuses it. These checks are self-reported or byte-level: they catch honest mistakes and lazy cheats, not an engine that lies.
+- **`inferencekit gates clip`, against the live engine.** Six gates, each PASS / FAIL / UNPROVEN / NOT RUN: `steps_honoured`, `cfg_honoured`, `resolution_frames`, `seed_honoured`, `prompt_sensitivity`, `no_cache`. Any FAIL makes that engine's speed unusable. Pixel comparisons need `--python <video venv>/bin/python` (PyAV, numpy); without it clips compare by bytes and the content gates stay UNPROVEN. The timed clips are decoded and checked only with `--bench-evidence <bench clip record>`.
+- **`inferencekit quality clip`, against the reference.** PSNR, SSIM and LPIPS per frame against the BF16 reference clips at the same seeds and initial noise, judged against floors. A lossless PASS needs `--reference-repeat` (the reference again, fresh launch) and `--reference-alt` (another exact attention backend): the repeat alone is exact, cannot tell an exact-but-different kernel from a lossy one, and leaves every engine that is not bit-identical UNPROVEN. LPIPS needs lpips and its weights in the `--python` venv. A lossy claim needs its declared budget and a human spot check. `--fidelity gross`: a loose gate.
+- **`inferencekit quality clip-steps`, step by step.** Every request writes `$CLIP_STEP_DUMP_DIR/<clip sha256>.safetensors` (x_t, guided output, x_{t-1} per step; `inferencekit.engines.clip.stepdump`). 2 clips drawn after the run are replayed through the reference from the engine's x_t: every step's error must stay within 2x another exact kernel's (`--alt-attention`); schedule, dtype, chain and decode guards.
+- **A re-run elsewhere.** To check final numbers, re-run `manifest.json` on another host with new clips and seeds (`--seed-base`); engines serve offline from the pinned download.
+
+## The checklist
+
+| # | Hack | Why it inflates | How it is caught |
+|---|---|---|---|
+| 1 | Fewer denoising steps than asked | Time is roughly linear in steps | `effective.steps_run` vs the request (bench clip). `steps_honoured`: the step counter equals the steps asked, the clip at N steps differs from N/2, and N steps take at least 1.10x as long (FAIL below 1.03). A fixed fraction of whatever is asked passes that ratio; quality vs the reference catches it |
+| 2 | A smaller clip: lower resolution, fewer frames or lower fps | Attention grows with the square of the token count | `resolution_frames`: decoded width, height, frame count and fps from frame timestamps (not the container header), on probes and, with `--bench-evidence`, timed clips. Made small and upscaled back: only quality vs the reference |
+| 3 | Guidance dropped (one forward pass per step instead of two) | Half the transformer work | `cfg_honoured`: another guidance scale must change the clip (its time ratio is recorded, not judged: the two passes may be batched); `quality clip-steps` |
+| 4 | Step caching: reusing transformer outputs across steps | Skips most of the work on cached steps | `quality clip-steps` audits every step: a reused output differs from the recompute. If kept, it is lossy: separate track, stated budget |
+| 5 | A distilled few-step checkpoint, or another checkpoint | Far fewer steps, other weights | Fewer steps: row 1. Other weights: quality vs the reference. Weights are not hashed automatically: a re-run serves offline from the pinned download; check by hand anything loaded from elsewhere |
+| 6 | Lower precision without saying so (FP8/FP4 matmuls or attention) | Faster kernels, fewer bytes | `effective.dtype` and `attention` (self-reported); `quality clip-steps` (step error vs the kernel floor, dumped dtypes) |
+| 7 | A clip served from an output cache | No work at all | Seeds change every round; `no_cache`: a replay may not be more than 10% faster than its first time, and different requests never get byte-identical clips (probes, and timed clips with `--bench-evidence`) |
+| 8 | ComfyUI node cache (text encoder or sampler outputs reused because their inputs did not change) | Stages skipped on repeated prompts or seeds | Any costly cached node makes the claim invalid (bench clip) and fails `no_cache`, except the fixed negative prompt's encoder listed in `allow_cached` (allowed for every engine, stated). ComfyUI runs with `--cache-classic` (its default cache keeps every earlier prompt's encodings). No request follows one with the same prompt or image file: bench clip warms up with its own prompts and orders clips so neighbours differ (pairs it cannot separate are listed); gates clip gives each probe pair its own prompt and image file (not possible with `--pairs 1`, which `no_cache` names) |
+| 9 | Seed or prompt ignored (a fixed noise or a fixed clip) | Lets a cache or a precomputed clip pass as new work | `seed_honoured`: different seeds give different clips, and a repeated seed stays at most half as far as a different one; `prompt_sensitivity`: a one-word change alters the clip |
+| 10 | Text embeddings precomputed for the known clip set | Text encoding drops out of the timed clip | New clips in a re-run; `prompt_sensitivity`. A near-zero text-encode stage is not flagged automatically: read the stage times |
+| 11 | Audio dropped or shortened (audio-and-video models) | Skips audio generation and decode | `resolution_frames`: asked-for audio must decode to the clip's duration (within 0.1 s plus one frame) |
+| 12 | Timing only the denoising loop, or a stage time as the headline | Leaves out text encoding, decode and transfer | The client-timed clip time (request sent to whole clip in hand) is the only published timer; stage times are self-reported and must sum to no more than it |
+| 13 | Warm-up or compilation inside some engines' timed clips | Unequal start costs | An untimed warm-up clip per distinct shape after every launch, for every engine, and interleaved rounds |
+| 14 | Unequal offload or memory settings | One engine keeps everything on the GPU, another offloads | Not checked automatically: record each engine's offload and memory policy in the manifest, compare on the same GPU, report a policy only one engine can use |
+
+## Reading the result
+
+- An invalid claim, or any gates FAIL, means no speed number. Fix the engine and measure again; never edit a record.
+- A quality verdict of UNPROVEN (too few clips, no usable floor, a floor too wide to decide) is not a PASS: add clips, rounds or the missing floor, and say which.
+- Lossless and lossy rows are separate tracks. Report a lossy row as "N x faster at the stated quality cost", with the budget it met.

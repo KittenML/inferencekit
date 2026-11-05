@@ -1,0 +1,19 @@
+build: 6743 (a1b2c3d4) with cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0 for x86_64-linux-gnu
+system_info: n_threads = 16 (n_threads_batch = 16) / 32 | CUDA : ARCHS = 1200 | USE_GRAPHS = 1 | PEER_MAX_BATCH_SIZE = 128 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | OPENMP = 1 | REPACK = 1 |
+ggml_cuda_init: found 1 CUDA devices:
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes
+load_tensors: offloading 36 repeating layers to GPU
+load_tensors: offloaded 37/37 layers to GPU
+llama_context: constructing llama_context
+llama_context: n_seq_max     = 4
+llama_context: n_ctx         = 16384
+llama_context: n_ctx_seq     = 4096
+llama_context: n_batch       = 2048
+llama_context: n_ubatch      = 512
+llama_context: causal_attn   = 1
+llama_context: flash_attn    = auto
+llama_context: kv_unified    = false
+llama_kv_cache:      CUDA0 KV buffer size =  2304.00 MiB
+llama_kv_cache: size = 2304.00 MiB ( 16384 cells,  36 layers,  4/4 seqs), K (f16): 1152.00 MiB, V (f16): 1152.00 MiB
+srv    load_model: initializing slots, n_slots = 4
+main: server is listening on http://127.0.0.1:8080 - starting the main loop

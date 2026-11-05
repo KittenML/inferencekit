@@ -1,0 +1,27 @@
+# Fidelity: what may change, and how it is proven
+
+Decided through [starting questions](starting-questions.md), recorded in intake and state: `fidelity: lossless` (default) or `lossy`, as the intake field or a constraint.
+
+| | `lossless` (default) | `lossy` (needs `quality.budget`) |
+|---|---|---|
+| Promise | the model's own outputs: greedy tokens within the A/A floor, sampled tokens from the same distribution | a quality loss inside a budget agreed before measuring |
+| Allowed | engines and knobs; graphs, fusion and kernels at the same numerics; exact byte cuts (re-encoding that decodes every element to identical bits; a bound-pruned output layer, full layer for logprobs); exact speculation; leaving out unused vision or audio towers for text work | all of that, plus lower-precision weights, activations or KV within `precision_allowed` / `kv_cache_dtype_allowed`, lossy speculation, other named approximations |
+| Forbidden | lower precision than the checkpoint declares; pruning, distillation, approximate attention, skipped layers or experts; caching across requests; sampling shortcuts | anything outside the budget or the allowed lists |
+| Proof | [proving-correctness](../../proving-correctness/SKILL.md); under sampling, `quality sampling` | [evaluating-quantization](../../evaluating-quantization/SKILL.md), the budget as the margin |
+| Reported | the main ranked table | its own block, "speed at a quality cost" |
+
+**One rule for formats:** a format below the stored one needs both `fidelity: lossy` and its entry in `precision_allowed` / `kv_cache_dtype_allowed`, and goes in its own block; only a task's explicit precision rule (below) joins the main table. No agreed `quality.budget` ([intake.md](intake.md)): no lossy row. A `non_interactive` intake with `fidelity: lossy` must carry `quality.budget` (validate refuses it otherwise): write the tier defaults ([measure-and-score.md](../../evaluating-quantization/references/measure-and-score.md), section 4) into it and log the choice in `QUESTIONS.md`.
+
+**A task's precision rule overrides these defaults, both ways.** If it allows more (e.g. 16-bit activations or KV cache), those numerics join the main track, declared, labelled "numerics changed", with quality no worse than the baseline's within the noise floor. If it allows less (no speculation, no re-encoding), that applies to the baseline too.
+
+**Declare numerics** (weights, activations, KV dtype, output layer, every exact shortcut) in one line per engine, in `manifest.json` `resolved_config` and the report: an undeclared change is a reward hack even when allowed.
+
+**Relative image/speech quality:** use the typed `quality.budget.relative` branch and hash-bind the external protocol with `quality.protocol_sha256` ([intake.md](intake.md#relative-modality-budgets)). Its limits describe degradation, not absolute LPIPS/WER thresholds. Authorized numerical changes need quality within that budget; bitwise PNG/PCM/code identity is diagnostic, not a promotion gate for them. Pure refactors keep their exactness proof. Intake validation never supplies external quality evidence or changes historical absolute FAILs into PASS. Architecture/model changes still require their own authorization.
+
+**Explicit perceptual acceptance:** `quality.acceptance: perceptual_and_task_noninferiority` requires blinded visual/listening and task-quality proof on image/TTS workloads. Numerical similarity is diagnostic; image LPIPS/SSIM thresholds are not required or accepted in that mode. Declare comparisons in `quality.diagnostic_only` and keep own-artifact integrity separate. Missing viewing/listening is UNPROVEN, even when task proxies pass. Historical studies keep their original rules and grades.
+
+**Text sampling:** identity and quality checks run greedy (temperature 0). Timing uses the workload's sampling: the task's or intake's, else the model's `generation_config.json` defaults, with a fixed seed, identical for every engine (the run manifest's `workload.extra_body`; `bench serve --extra-body`). Sampled exactness (sampler, speculation, pruning above temperature 0) is a distribution claim: `inferencekit quality sampling` on each engine (its draws against its own log-probabilities, which the teacher-forced check holds to the reference's), else UNPROVEN. It sees only the first token, so speculation also needs its accept/resample check ([speculative.md](speculative.md)).
+
+**Reconsidering older candidates:** when the user broadens quality permission, create a new pinned run/protocol and link the old commits, kernels and numerical-only failures. They become eligible for fresh screening, including baseline candidates; do not alter historical verdicts or reuse old timing as proof under new rules. Structural errors, missing work, nonfinite values and task-quality failures still matter. A new policy never turns missing perceptual evidence into PASS.
+
+**Three user choices:** `quality.preference: exact|balanced|speed` refines the fidelity contract. Exact requires equality of the declared deterministic/seeded outputs; the legacy lossless distribution check alone is insufficient. Balanced allows numerical differences with task/perceptual quality preserved. Speed allows stronger approximations inside an agreed quality budget. Lower formats still require the allowed-list entries; architecture changes require separate `model.architecture_changes` permission.

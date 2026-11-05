@@ -1,0 +1,120 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.12.7"
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - name: Versions agree (pyproject, __version__, plugin, marketplace, MCP pin)
+        run: uv run --no-project python scripts/release/check_versions.py
+      - name: Install (uv.lock must be current)
+        run: uv sync --locked --all-extras
+      - name: Tests
+        run: uv run --locked --all-extras pytest -q -rs
+
+  plugin:
+    name: Claude Code plugin manifests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+      - name: Validate the plugin
+        run: npx -y @anthropic-ai/claude-code@2.1.296 plugin validate ./plugin
+      - name: Validate the marketplace
+        run: npx -y @anthropic-ai/claude-code@2.1.296 plugin validate .
+
+  codex:
+    # Codex reads the Claude-compatible marketplace (.claude-plugin/marketplace.json) and plugin
+    # manifests. Advisory: a Codex CLI change must not block a merge, but it should be visible.
+    name: Codex plugin install (advisory)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+      - name: Use a throwaway Codex home
+        run: |
+          mkdir -p "$RUNNER_TEMP/codex-home"
+          echo "CODEX_HOME=$RUNNER_TEMP/codex-home" >> "$GITHUB_ENV"
+      - name: Add the marketplace and install the plugin
+        run: |
+          npx -y @openai/codex@0.162.1 plugin marketplace add "$GITHUB_WORKSPACE"
+          npx -y @openai/codex@0.162.1 plugin add inferencekit@inferencekit
+          npx -y @openai/codex@0.162.1 plugin list | tee plugins.txt
+          grep -E '^inferencekit@inferencekit +installed, enabled' plugins.txt
+      - name: The plugin's MCP server is registered with the pinned launcher
+        run: |
+          npx -y @openai/codex@0.162.1 mcp list | tee mcp.txt
+          version="$(python3 -c 'import json; print(json.load(open("plugin/.claude-plugin/plugin.json"))["version"])')"
+          grep -F "inferencekit-cli[mcp]==$version inferencekit mcp serve" mcp.txt
+
+  opencode:
+    # OpenCode has no marketplace for plugins: plugin/opencode/install.py wires the skills, commands, subagents and
+    # MCP server into its config. Advisory, like the Codex job: an OpenCode change must not block a merge.
+    name: OpenCode install (advisory)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+      - name: Install into a throwaway config home
+        run: |
+          echo "XDG_CONFIG_HOME=$RUNNER_TEMP/opencode-config" >> "$GITHUB_ENV"
+          XDG_CONFIG_HOME="$RUNNER_TEMP/opencode-config" python3 plugin/opencode/install.py
+      - name: OpenCode loads the skills, commands, subagents and MCP entry
+        run: |
+          npx -y opencode-ai@1.19.0 debug skill > skills.json
+          npx -y opencode-ai@1.19.0 debug config > config.json
+          python3 - <<'PY'
+          import json
+          skills = {s["name"] for s in json.load(open("skills.json"))}
+          cfg = json.load(open("config.json"))
+          version = json.load(open("plugin/.claude-plugin/plugin.json"))["version"]
+          assert {"inference-triage", "optimizing-inference", "benchmarking", "profiling", "optimizing-kernels",
+                  "proving-correctness", "evaluating-quantization", "reporting-perf-claims"} <= skills, skills
+          assert {"optimize-inference", "bench", "profile", "perf-report"} <= set(cfg.get("command", {}))
+          assert {"engine-scout", "quant-scout", "profile-analyst", "claims-skeptic"} <= set(cfg.get("agent", {}))
+          assert cfg["mcp"]["inferencekit"]["command"][:3] == ["uvx", "--from", f"inferencekit-cli[mcp]=={version}"]
+          print("OpenCode sees", sorted(skills))
+          PY

@@ -1,0 +1,54 @@
+{
+ "format": 1,
+ "rule": "source rows the release leak scanner's private rules would flag; listed by position in the source file (keyed by that file's sha256) so a rebuild without the private rules matches",
+ "sources": {
+  "1bcdf0a1ac611dd6b70a20d100a07085754da4e90a949d6031717b86cd6d020a": "gutenberg-219",
+  "2892e919000e17c83e1dac51b30f4675db50536b644d7579fe8a89bb399a9bdc": "gutenberg-35",
+  "2df9083338b4abd6bceb5635764dab5d833b393b55759dffb0959b6fcbf794ec": "databricks-dolly-15k",
+  "7810cd483cffcf2cc8a1d8f0d5807931e69d4f48cd14149b8c76f88af82fead3": "gutenberg-84",
+  "8417469e3ab664749f7b36ebb85799075818207b0380b54c27d07d592a44117d": "gutenberg-36",
+  "b43448a88391591f9cf82b25553df00faf47a2752a873185fcdd1156eebdb990": "gutenberg-43",
+  "b5e88b71a1cda068e9ab1d94344c9d932338ba6da1a66def97a1aecd9cfcc87d": "gutenberg-2701",
+  "d139120965c81f10e3f747d891a49babdb49d986b25f7ab25299b1bbf4731146": "gutenberg-2554",
+  "d54c2b80d40a40b982cd88852c6180bb944d95acdb028af3d0e01a1750681784": "gutenberg-98"
+ },
+ "excluded": {
+  "1bcdf0a1ac611dd6b70a20d100a07085754da4e90a949d6031717b86cd6d020a": [
+   "gutenberg:219:passage0",
+   "gutenberg:219:passage1"
+  ],
+  "2892e919000e17c83e1dac51b30f4675db50536b644d7579fe8a89bb399a9bdc": [
+   "gutenberg:35:passage2",
+   "gutenberg:35:passage5"
+  ],
+  "2df9083338b4abd6bceb5635764dab5d833b393b55759dffb0959b6fcbf794ec": [
+   "dolly:row5363",
+   "dolly:row6271",
+   "dolly:row8117",
+   "dolly:row8205",
+   "dolly:row9651",
+   "dolly:row11219",
+   "dolly:row11284"
+  ],
+  "7810cd483cffcf2cc8a1d8f0d5807931e69d4f48cd14149b8c76f88af82fead3": [
+   "gutenberg:84:passage1"
+  ],
+  "8417469e3ab664749f7b36ebb85799075818207b0380b54c27d07d592a44117d": [
+   "gutenberg:36:passage4"
+  ],
+  "b43448a88391591f9cf82b25553df00faf47a2752a873185fcdd1156eebdb990": [
+   "gutenberg:43:passage0"
+  ],
+  "b5e88b71a1cda068e9ab1d94344c9d932338ba6da1a66def97a1aecd9cfcc87d": [
+   "gutenberg:2701:passage0",
+   "gutenberg:2701:passage1",
+   "gutenberg:2701:passage3"
+  ],
+  "d139120965c81f10e3f747d891a49babdb49d986b25f7ab25299b1bbf4731146": [
+   "gutenberg:2554:passage3"
+  ],
+  "d54c2b80d40a40b982cd88852c6180bb944d95acdb028af3d0e01a1750681784": [
+   "gutenberg:98:passage2"
+  ]
+ }
+}

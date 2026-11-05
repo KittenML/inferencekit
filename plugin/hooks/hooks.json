@@ -1,0 +1,3 @@
+{"hooks": {
+"SessionStart": [{"hooks": [{"type": "command", "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}/hooks/deadline.py\" start"}]}],
+"Stop": [{"hooks": [{"type": "command", "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}/hooks/deadline.py\" stop"}]}]}}

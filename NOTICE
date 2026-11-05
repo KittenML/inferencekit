@@ -1,0 +1,9 @@
+inferencekit
+Copyright 2026 Stellon Labs
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It calls, but does not include or redistribute, third-party tools such as
+NVIDIA Nsight Systems, NVIDIA Nsight Compute and inference engines installed
+by the user. See THIRD_PARTY_NOTICES.md for the libraries it depends on and
+their licenses.
