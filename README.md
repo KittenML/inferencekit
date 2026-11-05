@@ -14,7 +14,7 @@ Benchmark, profile and optimize text, image, audio and video models with your co
 [![Codex](https://img.shields.io/badge/Codex-plugin-111111.svg)](#install)
 [![OpenCode](https://img.shields.io/badge/OpenCode-plugin-4a7bd0.svg)](#install)
 
-[Install](#install) · [How it works](#how-it-works) · [Showcase](#results) · [Features](#features) · [Engines](https://github.com/kittenml/inferencekit-engines) · [Roadmap](#roadmap) · [Contributing](https://github.com/KittenML/inferencekit/blob/main/CONTRIBUTING.md)
+[Install](#install) · [How it works](#how-it-works) · [Showcase](#showcase) · [Features](#features) · [Engines](https://github.com/kittenml/inferencekit-engines) · [Roadmap](#roadmap) · [Contributing](https://github.com/KittenML/inferencekit/blob/main/CONTRIBUTING.md)
 
 </div>
 
