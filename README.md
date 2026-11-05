@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/inferencekit-kitten.png" width="200" height="200" alt="KittenML kitten holding a GPU">
+<img src="https://raw.githubusercontent.com/KittenML/inferencekit/main/assets/inferencekit-kitten.png" width="200" height="200" alt="KittenML kitten holding a GPU">
 
 # inferencekit
 
@@ -8,13 +8,13 @@
 
 Benchmark, profile and optimize text, image, audio and video models with your coding agent.
 
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/KittenML/inferencekit/blob/main/LICENSE)
 [![PyPI: inferencekit-cli](https://img.shields.io/pypi/v/inferencekit-cli.svg?label=inferencekit-cli)](https://pypi.org/project/inferencekit-cli/)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-plugin-d97757.svg)](#install)
 [![Codex](https://img.shields.io/badge/Codex-plugin-111111.svg)](#install)
 [![OpenCode](https://img.shields.io/badge/OpenCode-plugin-4a7bd0.svg)](#install)
 
-[Install](#install) · [How it works](#how-it-works) · [Showcase](#results) · [Features](#features) · [Engines](https://github.com/kittenml/inferencekit-engines) · [Roadmap](#roadmap) · [Contributing](CONTRIBUTING.md)
+[Install](#install) · [How it works](#how-it-works) · [Showcase](#results) · [Features](#features) · [Engines](https://github.com/kittenml/inferencekit-engines) · [Roadmap](#roadmap) · [Contributing](https://github.com/KittenML/inferencekit/blob/main/CONTRIBUTING.md)
 
 </div>
 
@@ -29,7 +29,7 @@ inferencekit gives your agent the playbook and the tools of a senior inference e
 3. **Find the bottleneck.** It selects the profiler for your hardware: Nsight on NVIDIA, ROCm tools on AMD, or Instruments and Metal on Apple. It measures the critical path and investigates memory, compute and launch costs, checking current vendor docs when support is uncertain.
 4. **Investigate and implement, if requested.** Search current code, papers, compiler docs and engineering talks; inspect dispatch, IR and assembly when useful. Choose graph execution, fusion, matrix kernels, packing, state reuse or other techniques from measured bottlenecks. Independent implementations can run in parallel; one coordinator integrates changes, and measurements stay serialized per device. Separate authorized devices may run concurrently.
 5. **Prove every step.** Every change gets a fast correctness check and a timed screen; milestones get the full proof: interleaved rounds against the tuned baseline, the anti-cheat gates and quality against a reference model. Changes that miss the agreed performance or quality requirements are reverted.
-6. **Ship it.** You get the fastest proven configuration and a [`REPORT.md`](plugin/skills/reporting-perf-claims/references/wording-guide.md) with the result, quality checks, commands to install and run it, saved outputs, and details to reproduce the measurements.
+6. **Ship it.** You get the fastest proven configuration and a [`REPORT.md`](https://github.com/KittenML/inferencekit/blob/main/plugin/skills/reporting-perf-claims/references/wording-guide.md) with the result, quality checks, commands to install and run it, saved outputs, and details to reproduce the measurements.
 
 ## When it asks you
 
@@ -79,7 +79,7 @@ GPT-6.1 Terra used inferencekit to wire online FP8 into selected transformer pro
 
 **Fastest decode in our tested vLLM, SGLang and llama.cpp panel.** Claude Opus 5.5 used inferencekit to build **Qwen3-8B on RTX 5090** with custom FP8 matrix-vector kernels, a CUDA graph for the decode step and fused attention. Single-user decode was measured with in-process timers and no speculative decoding; llama.cpp Q8_0 is a separate format comparison. [Design, results and limits](https://github.com/KittenML/inferencekit-engines/tree/main/qwen3-8b-fp8_rtx-5090/).
 
-![Bar chart of speedups against engine baselines on the same hardware, including tuned vLLM and MLX-Audio: Gemma 4 26B-A4B on RTX 5090, 1.33× faster than tuned vLLM; LTX-2.5 on RTX PRO 6000, 1.25× faster than ComfyUI; Qwen3-8B on RTX 5090, 1.22× faster than vLLM with FlashInfer; Drama3 on Apple M4, 1.11× faster than tuned MLX-Audio; MOSS-Image-SFT on RX 9070 XT, 2.46× with quality secondary (FP8, 24 vs 50 steps; paired 95% CI 2.453–2.465×, lower bound 2.453×)](assets/hero-speedups.png)
+![Bar chart of speedups against engine baselines on the same hardware, including tuned vLLM and MLX-Audio: Gemma 4 26B-A4B on RTX 5090, 1.33× faster than tuned vLLM; LTX-2.5 on RTX PRO 6000, 1.25× faster than ComfyUI; Qwen3-8B on RTX 5090, 1.22× faster than vLLM with FlashInfer; Drama3 on Apple M4, 1.11× faster than tuned MLX-Audio; MOSS-Image-SFT on RX 9070 XT, 2.46× with quality secondary (FP8, 24 vs 50 steps; paired 95% CI 2.453–2.465×, lower bound 2.453×)](https://raw.githubusercontent.com/KittenML/inferencekit/main/assets/hero-speedups.png)
 
 <details>
 <summary>Measurement details and agent time, tokens and cost</summary>
@@ -126,15 +126,15 @@ Each check ends PASS, FAIL, UNPROVEN (not enough evidence) or NOT RUN. A missing
 
 ## Features
 
-- **9 skills, 4 commands and 5 read-only subagents**, backed by [41 executable CLI/MCP operations](src/inferencekit/ops/).
-- **Reusable run tools:** [ikstep](plugin/skills/optimizing-inference/references/remote-host.md) manages jobs on local or remote Linux hosts, readiness checks and concise status output.
+- **9 skills, 4 commands and 5 read-only subagents**, backed by [41 executable CLI/MCP operations](https://github.com/KittenML/inferencekit/tree/main/src/inferencekit/ops/).
+- **Reusable run tools:** [ikstep](https://github.com/KittenML/inferencekit/blob/main/plugin/skills/optimizing-inference/references/remote-host.md) manages jobs on local or remote Linux hosts, readiness checks and concise status output.
 - **Compact output:** CLI summaries and bounded MCP responses keep full evidence records on disk, with paging for large lists.
 - **Speed-of-light ceilings:** measured memory bandwidth (`ceiling bw`) and exact bytes per token read from the checkpoint's safetensors headers (`roofline`), including NVFP4, FP8 and mixture-of-experts models.
 - **Engine triage and tuning:** vLLM, SGLang, llama.cpp, TensorRT-LLM, ComfyUI, Diffusers and others. Only settings that the engine's own logs show in effect are counted.
-- **Kernel work:** profiling routed by hardware, CUDA/HIP, Triton and Metal kernels, and torch.compile. The included [engine skeleton](plugin/skills/optimizing-kernels/skeleton/README.md) targets NVIDIA CUDA.
+- **Kernel work:** profiling routed by hardware, CUDA/HIP, Triton and Metal kernels, and torch.compile. The included [engine skeleton](https://github.com/KittenML/inferencekit/blob/main/plugin/skills/optimizing-kernels/skeleton/README.md) targets NVIDIA CUDA.
 - **One timer for every engine:** interleaved rounds in a balanced order, medians with 95% confidence intervals.
 - **Anti-cheat gates:** caching, token counts, output length, rare tokens, sampling probes, prompt rendering, speculative-decoding exactness.
-- **Quality checks:** reference quality and GSM8K for language models; latent and final-clip checks for video. Images and speech use client timing and structural checks plus an external semantic quality protocol; see [media benchmarks](docs/media-benchmarks.md).
+- **Quality checks:** reference quality and GSM8K for language models; latent and final-clip checks for video. Images and speech use client timing and structural checks plus an external semantic quality protocol; see [media benchmarks](https://github.com/KittenML/inferencekit/blob/main/docs/media-benchmarks.md).
 - **Budget control:** spending authorized up front, with hardware-hour, dollar and elapsed-time limits, or explicitly uncapped spending with a finite deadline. No repeated plan approval inside the agreed scope.
 - **Reproducible output:** a ranked table labelled PASS, FAIL, UNPROVEN or NOT RUN, a launch command, a review page and the commands that reproduce every number.
 
@@ -179,7 +179,7 @@ python3 ~/.local/share/inferencekit/plugin/opencode/install.py
 | Codex | `$inferencekit:optimizing-inference`, `$inferencekit:benchmarking`, `$inferencekit:profiling`, `$inferencekit:reporting-perf-claims` | `codex plugin list`; `codex mcp list` |
 | OpenCode | `/optimize-inference`, `/bench`, `/profile`, `/perf-report`, and each skill as `/<skill-name>` | `opencode mcp list` |
 
-Updating, removing, per-project installs and OpenCode's options: [docs/install.md](docs/install.md).
+Updating, removing, per-project installs and OpenCode's options: [docs/install.md](https://github.com/KittenML/inferencekit/blob/main/docs/install.md).
 
 ## Try it
 
@@ -195,7 +195,7 @@ To tune existing engines without custom kernels:
 
 In OpenCode the command is `/optimize-inference`. It asks only for missing preferences and spending authorization; a plan is optional. For a repeatable setup, start from an intake file: `inferencekit intake template --out intake.yaml`, then `/inferencekit:optimize-inference intake.yaml`. For unattended runs, set `non_interactive: true` and `budget.approved: true` with a cap.
 
-More things to ask for: [docs/examples.md](docs/examples.md).
+More things to ask for: [docs/examples.md](https://github.com/KittenML/inferencekit/blob/main/docs/examples.md).
 
 ## CLI and MCP server
 
@@ -206,7 +206,7 @@ inferencekit gates run --base-url http://127.0.0.1:8000     # anti-cheat gates o
 uvx --from 'inferencekit-cli[mcp]==0.1.0' inferencekit mcp serve   # MCP server (stdio) for any MCP client
 ```
 
-Every CLI command is also an MCP tool with the same arguments. Text benchmarks, gates and quality checks talk HTTP to OpenAI-compatible servers. Image and streamed speech measurements use the [media adapter contracts](docs/media-benchmarks.md).
+Every CLI command is also an MCP tool with the same arguments. Text benchmarks, gates and quality checks talk HTTP to OpenAI-compatible servers. Image and streamed speech measurements use the [media adapter contracts](https://github.com/KittenML/inferencekit/blob/main/docs/media-benchmarks.md).
 
 ## Supported hardware and agents
 
@@ -237,8 +237,8 @@ Profiles and logs can contain environment variables, host names and paths: scan 
 
 ## Contributing
 
-We welcome bug reports, engine settings and new skills. See [CONTRIBUTING.md](CONTRIBUTING.md). Develop with `uv sync --all-extras`, then `uv run --all-extras pytest -q` (no GPU needed). Report security problems privately: [SECURITY.md](SECURITY.md).
+We welcome bug reports, engine settings and new skills. See [CONTRIBUTING.md](https://github.com/KittenML/inferencekit/blob/main/CONTRIBUTING.md). Develop with `uv sync --all-extras`, then `uv run --all-extras pytest -q` (no GPU needed). Report security problems privately: [SECURITY.md](https://github.com/KittenML/inferencekit/blob/main/SECURITY.md).
 
 ## License
 
-Apache-2.0: [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright 2026 Stellon Labs. inferencekit is an independent project, not affiliated with NVIDIA, any engine project or any model publisher. Product and model names belong to their owners. Every result holds for the hardware, driver, engine version, model and workload it was measured on; change any of them and the numbers can change. The software comes with no warranty, as the Apache-2.0 licence states, and you are responsible for the cost of hardware use with it.
+Apache-2.0: [LICENSE](https://github.com/KittenML/inferencekit/blob/main/LICENSE) and [NOTICE](https://github.com/KittenML/inferencekit/blob/main/NOTICE). Copyright 2026 Stellon Labs. inferencekit is an independent project, not affiliated with NVIDIA, any engine project or any model publisher. Product and model names belong to their owners. Every result holds for the hardware, driver, engine version, model and workload it was measured on; change any of them and the numbers can change. The software comes with no warranty, as the Apache-2.0 licence states, and you are responsible for the cost of hardware use with it.
