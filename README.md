@@ -14,7 +14,7 @@ Benchmark, profile and optimize text, image, audio and video models with your co
 [![Codex](https://img.shields.io/badge/Codex-plugin-111111.svg)](#install)
 [![OpenCode](https://img.shields.io/badge/OpenCode-plugin-4a7bd0.svg)](#install)
 
-[Install](#install) · [How it works](#how-it-works) · [Showcase](#showcase) · [Features](#features) · [Engines](https://github.com/kittenml/inferencekit-engines) · [Roadmap](#roadmap) · [Contributing](https://github.com/KittenML/inferencekit/blob/main/CONTRIBUTING.md)
+[Install](#install) · [How it works](#how-it-works) · [Showcase](#showcase) · [Features](#features) · [Engines](https://github.com/kittenml/inferencekit-engines) · [Roadmap](#roadmap) · [Contributing](https://github.com/KittenML/inferencekit/blob/main/CONTRIBUTING.md) · [Discord](https://discord.com/invite/VJ86W4SURW)
 
 </div>
 
@@ -80,6 +80,8 @@ GPT-6.1 Terra used inferencekit to wire online FP8 into selected transformer pro
 **Fastest decode in our tested vLLM, SGLang and llama.cpp panel.** Claude Opus 5.5 used inferencekit to build **Qwen3-8B on RTX 5090** with custom FP8 matrix-vector kernels, a CUDA graph for the decode step and fused attention. Single-user decode was measured with in-process timers and no speculative decoding; llama.cpp Q8_0 is a separate format comparison. [Design, results and limits](https://github.com/KittenML/inferencekit-engines/tree/main/qwen3-8b-fp8_rtx-5090/).
 
 ![Bar chart of speedups against engine baselines on the same hardware, including tuned vLLM and MLX-Audio: Gemma 4 26B-A4B on RTX 5090, 1.33× faster than tuned vLLM; LTX-2.5 on RTX PRO 6000, 1.25× faster than ComfyUI; Qwen3-8B on RTX 5090, 1.22× faster than vLLM with FlashInfer; Drama3 on Apple M4, 1.11× faster than tuned MLX-Audio; MOSS-Image-SFT on RX 9070 XT, 2.46× with quality secondary (FP8, 24 vs 50 steps; paired 95% CI 2.453–2.465×, lower bound 2.453×)](https://raw.githubusercontent.com/KittenML/inferencekit/main/assets/hero-speedups.png)
+
+**Start optimizing models without a $200k/year hire. Our published agent runs cost as little as $18**
 
 <details>
 <summary>Measurement details and agent time, tokens and cost</summary>
