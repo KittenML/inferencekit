@@ -38,11 +38,13 @@ says so.
 from __future__ import annotations
 
 import math
+import re
 
 from inferencekit import evidence as ev
 from inferencekit import stats
 from inferencekit.registry import Arg, OpError, operation
 from inferencekit.serve.clip_client import TASKS as CLIP_TASKS
+from inferencekit.serve.round_evidence import MAX_ROUNDS, MAX_ROUND_INDEX, finite, memory_of, round_coverage
 
 # bench clip's rounds: every clip, then one task's clips (bench_clip.round_key).
 CLIP_METRICS = ("clip_ms", "clips_per_hour") + tuple(f"{m}_{t}" for t in CLIP_TASKS
@@ -135,7 +137,7 @@ different numerical formats cannot become a same-precision engine speed claim.
         workload = rec["identity"].get("workload") or {}
         if not (workload.get("request_set") or {}).get("sha256"):
             out.append(f"{label} missing request_set hash")
-        if not rec["identity"]["gpu"].get("name"):
+        if not rec["identity"]["gpu"].get("name") and not (rec["identity"].get("cpu") or {}).get("model"):
             out.append(f"{label} missing hardware identity")
         if not rec["identity"]["model"].get("id"):
             out.append(f"{label} missing model identity")
@@ -163,10 +165,76 @@ different numerical formats cannot become a same-precision engine speed claim.
 def round_values(record: dict, metric: str) -> dict[int, dict]:
     """{round index: round} for rounds that have the metric."""
     out = {}
-    for r in record.get("data", {}).get("rounds", []) or []:
-        if r.get(metric) is not None:
-            out[int(r["index"])] = r
+    rows = record.get("data", {}).get("rounds") or []
+    for r in rows[:MAX_ROUNDS] if isinstance(rows, list) else []:
+        if isinstance(r, dict) and type(r.get("index")) is int and 0 <= r["index"] <= MAX_ROUND_INDEX and finite(r.get(metric)):
+            out[r["index"]] = r
     return out
+
+
+def cpu_hardware_reasons(a: dict, b: dict) -> list[str]:
+    ca, cb = (r["identity"].get("cpu") for r in (a, b))
+    if ca is None and cb is None:
+        return []
+    if ca is None or cb is None:
+        return ["hardware backends differ or CPU identity is missing from one arm"]
+    reasons = []
+    for label, rec, cpu in (("baseline", a, ca), ("candidate", b, cb)):
+        if rec["identity"]["gpu"].get("name"):
+            reasons.append(f"{label} mixes CPU and GPU hardware identities")
+        if not cpu.get("model"):
+            reasons.append(f"{label} missing CPU model identity")
+    # Affinity and threads are tuning knobs; topology is the host's identity.
+    for key in ("model", "architecture", "logical_cores", "physical_cores", "topology_sha256"):
+        if ca.get(key) is not None and cb.get(key) is not None and ca[key] != cb[key]:
+            reasons.append(f"different CPU hardware ({key})")
+    return reasons
+
+
+def lifecycle_verdict(record: dict, coverage: dict) -> str:
+    data = record.get("data") or {}
+    proof = data.get("lifecycle") or {}
+    contexts = data.get("runtime_rounds") or []
+    expected = coverage.get("expected_indices")
+    if not (data.get("scheduler_final") is True and proof.get("source") == "bench rounds"
+            and proof.get("fresh_process_per_cell") is True and proof.get("valid") is True
+            and proof.get("verdict") == "PASS" and coverage.get("complete") is True
+            and expected and len(contexts) == len(expected)):
+        return "UNPROVEN"
+    indices = [r.get("index") for r in contexts if isinstance(r, dict)]
+    if (len(indices) != len(contexts) or any(type(i) is not int for i in indices)
+            or len(set(indices)) != len(indices) or set(indices) != set(expected)):
+        return "UNPROVEN"
+    if not all(r.get("status") == "ok" and (r.get("ready") or {}).get("status") == "ready"
+               and (r.get("stop") or {}).get("group_gone") is True for r in contexts):
+        return "UNPROVEN"
+    return "PASS"
+
+
+def arm_environment(record: dict) -> dict | None:
+    """Selected scheduler-recorded environment facts; no arbitrary engine flags."""
+    env = (record.get("identity", {}).get("engine", {}).get("flags") or {}).get("server_env")
+    if not isinstance(env, dict):
+        return None
+    return {key: env[key] for key in ("controls", "ld_preload", "omitted", "varied_between_rounds") if key in env}
+
+
+def environment_differences(environments: dict) -> list[str]:
+    a, b = environments["baseline"], environments["candidate"]
+    if a is None or b is None:
+        return ["availability"] if a != b else []
+    ca, cb = a.get("controls") or {}, b.get("controls") or {}
+    if not isinstance(ca, dict) or not isinstance(cb, dict):
+        return ["unverified controls"]
+    names = [k for k in sorted(set(ca) | set(cb)) if isinstance(k, str)
+             and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", k) and ca.get(k) != cb.get(k)]
+    if a.get("ld_preload") != b.get("ld_preload"):
+        names.append("LD_PRELOAD")
+    if a.get("varied_between_rounds") != b.get("varied_between_rounds"):
+        names.append("round stability")
+    if a.get("omitted") != b.get("omitted"):
+        names.append("omitted controls")
+    return names
 
 
 def interleaved(base: dict[int, dict], cand: dict[int, dict], pairs: list[int]) -> bool | None:
@@ -175,7 +243,7 @@ def interleaved(base: dict[int, dict], cand: dict[int, dict], pairs: list[int]) 
     for arm, rounds in (("b", base), ("c", cand)):
         for i in pairs:
             t = rounds[i].get("t_start")
-            if t is None:
+            if not finite(t):
                 return None
             events.append((t, arm, i))
     events.sort()
@@ -192,19 +260,82 @@ def interleaved(base: dict[int, dict], cand: dict[int, dict], pairs: list[int]) 
             Arg("metric", "string", "Per-round metric to compare.", default="decode_tok_s",
                 choices=tuple(HIGHER_IS_BETTER)),
             Arg("threshold", "number", "Practical threshold as a fraction (0.02 = 2%).", default=0.02),
+            Arg("expected_rounds", "integer", "Intended total rounds per arm, indexed from zero; checks missing tail rounds when no plan was recorded."),
             Arg("image_tradeoff", "boolean", "Compare image timing with permitted step/precision differences; "
                 "quality and lifecycle require separate proof. Requires image task identities.", default=False),
             Arg("resamples", "integer", "Bootstrap resamples.", default=stats.DEFAULT_RESAMPLES),
             Arg("seed", "integer", "Bootstrap seed.", default=0)])
-def compare(call, baseline, candidate, metric, threshold, resamples, seed, image_tradeoff=False):
+def compare(call, baseline, candidate, metric, threshold, resamples, seed, image_tradeoff=False, expected_rounds=None):
+    if expected_rounds is not None and not 1 <= expected_rounds <= MAX_ROUNDS:
+        raise OpError(f"expected_rounds must be positive and <= {MAX_ROUNDS}")
     store = ev.Store()
     a, b = store.load(baseline), store.load(candidate)
     higher = HIGHER_IS_BETTER[metric]
     ra, rb = round_values(a, metric), round_values(b, metric)
     limitations, missing = [], []
     reasons_inconclusive = []
+    arm_coverage = {label: round_coverage(rec, expected_rounds) for label, rec in (("baseline", a), ("candidate", b))}
+    memory = {label: memory_of(rec) for label, rec in (("baseline", a), ("candidate", b))}
+    environments = {label: arm_environment(rec) for label, rec in (("baseline", a), ("candidate", b))}
 
     for rec, label in ((a, "baseline"), (b, "candidate")):
+        coverage = arm_coverage[label]
+        for key, what in (("invalid_indices", "invalid or oversized round indices"),
+                          ("invalid_plan", "invalid round plan"), ("oversized_plan", "oversized round plan"),
+                          ("oversized_rows", "too many recorded rounds")):
+            if coverage[key]:
+                reasons_inconclusive.append(f"{label} {what}")
+        plan = rec.get("data", {}).get("round_plan") or {}
+        recorded_expected = plan.get("expected_indices") if isinstance(plan, dict) else None
+        if expected_rounds is not None and recorded_expected is not None and recorded_expected != list(range(expected_rounds)):
+            reasons_inconclusive.append(f"{label} --expected-rounds conflicts with its recorded round plan")
+        raw_rows = rec.get("data", {}).get("rounds") or []
+        rows = raw_rows[:MAX_ROUNDS] if isinstance(raw_rows, list) else []
+        if any(not isinstance(r, dict) or type(r.get("index")) is not int or r["index"] < 0 for r in rows):
+            reasons_inconclusive.append(f"{label} has invalid round indices")
+            coverage["complete"] = False
+        for key, what in (("missing_indices", "missing requested rounds"), ("unexpected_indices", "rounds outside the requested plan"),
+                          ("gaps", "gaps in observed rounds"),
+                          ("duplicate_indices", "duplicate round indices")):
+            if coverage[key]:
+                reasons_inconclusive.append(f"{label} {what}: {coverage[key]}")
+                coverage["complete"] = False
+        metric_indices = set((ra if label == "baseline" else rb))
+        metric_missing = sorted(set(coverage["actual_indices"]) - metric_indices)
+        coverage["metric_indices"] = sorted(metric_indices)
+        coverage["missing_metric_indices"] = metric_missing
+        if metric_missing:
+            reasons_inconclusive.append(f"{label} missing finite {metric} in rounds: {metric_missing}")
+            coverage["complete"] = False
+        if coverage["expected_indices"] is None:
+            limitations.append(f"{label} planned round count unknown; missing tail rounds cannot be checked "
+                               "without --expected-rounds or a recorded round plan")
+        if not memory[label]:
+            limitations.append(f"{label} peak RSS/VRAM was not recorded; memory use is unknown")
+        for key, measurement in memory[label].items():
+            if measurement.get("complete") is not True:
+                qualifier = "partial" if measurement.get("complete") is False else "unknown"
+                limitations.append(f"{label} {key} coverage is {qualifier}; the recorded value does not establish "
+                                   "the peak over every requested round")
+            if measurement.get("verdict") not in (None, "PASS"):
+                limitations.append(f"{label} {key} source memory verdict: {measurement['verdict']}")
+            limitations.extend(f"{label} {key}: {note}" for note in measurement.get("limitations", [])
+                               if isinstance(note, str))
+            if measurement.get("method") == "sampled_process_group_rss":
+                limitations.append(f"{label} peak RSS is sampled process-group RSS: a lower bound on the true peak, "
+                                   "with shared pages counted per process")
+        server_env = (rec.get("identity", {}).get("engine", {}).get("flags") or {}).get("server_env")
+        envs = [server_env] if isinstance(server_env, dict) else []
+        if isinstance(server_env, dict) and "varied_between_rounds" in server_env:
+            reasons_inconclusive.append(f"{label} server tuning environment varied or was unavailable between rounds")
+            envs = server_env["varied_between_rounds"] if isinstance(server_env["varied_between_rounds"], list) else []
+        if any(isinstance(env, dict) and (env.get("omitted") or any(
+                value is None for value in (env.get("controls") or {}).values())) for env in envs):
+            limitations.append(f"{label} requested CPU controls were omitted or invalid; the effective tuning "
+                               "configuration is unverified")
+        if any(isinstance(env, dict) and any(isinstance(preload, dict) and preload.get("status") != "hashed"
+                for preload in env.get("ld_preload", [])) for env in envs):
+            limitations.append(f"{label} preload library identity was not fully verified")
         problem = ev.integrity_problem(rec)
         if problem:  # an edited input must not turn into a fresh, verifying comparison
             reasons_inconclusive.append(f"{label} {problem}")
@@ -215,7 +346,7 @@ def compare(call, baseline, candidate, metric, threshold, resamples, seed, image
                 "mode") == "load":
             reasons_inconclusive.append(f"{label} is a load-mode serve_benchmark (one level, no rounds); compare "
                                         "capacity records' N* instead")
-        failed = sum(int(r.get("n_failed") or 0) for r in rec.get("data", {}).get("rounds", []) or [])
+        failed = sum(int(r.get("n_failed") or 0) for r in rows if isinstance(r, dict))
         if failed and rec.get("kind") in ("serve_benchmark", "clip_benchmark", *MEDIA_METRICS):
             # Round medians drop failed requests: an arm that fails the slow prompts would look faster.
             reasons_inconclusive.append(f"{label} had {failed} failed request(s); its round medians exclude them, "
@@ -250,8 +381,8 @@ def compare(call, baseline, candidate, metric, threshold, resamples, seed, image
         reasons_inconclusive += media_workload_reasons(a, b, image_tradeoff=image_tradeoff)
         if metric not in MEDIA_METRICS[a["kind"]]:
             reasons_inconclusive.append(f"{metric} is not measured by {a['kind']}")
-        limitations.append("This compares client-timed performance only; image/speech quality, fresh-process "
-                           "lifecycle and repeated-run reliability require their own evidence.")
+        limitations.append("This compares client-timed performance only; image/speech quality and repeated-run "
+                           "reliability require their own evidence. Fresh-process lifecycle is checked separately.")
         if image_tradeoff:
             limitations.append("Image format/work tradeoff: steps and numerical formats may differ. "
                                "Timing is not a quality or same-work engine comparison.")
@@ -277,6 +408,10 @@ def compare(call, baseline, candidate, metric, threshold, resamples, seed, image
     ga, gb = a["identity"]["gpu"].get("name"), b["identity"]["gpu"].get("name")
     if ga and gb and ga != gb:
         reasons_inconclusive.append(f"different GPUs ({ga} vs {gb})")
+    reasons_inconclusive += cpu_hardware_reasons(a, b)
+    if a["identity"].get("cpu") is not None and b["identity"].get("cpu") is not None:
+        if any(not (r["identity"]["cpu"] or {}).get("topology_sha256") for r in (a, b)):
+            limitations.append("CPU topology identity is incomplete; equal model labels alone do not verify the same topology")
 
     unavailable = [label for rec, rounds, label in ((a, ra, "baseline"), (b, rb, "candidate"))
                    if not rounds and rec.get("data", {}).get("rounds")]
@@ -289,6 +424,9 @@ def compare(call, baseline, candidate, metric, threshold, resamples, seed, image
             why = f"{metric} is absent from every round of the {' and '.join(unavailable)} record"
         reasons_inconclusive.append(why + "; more rounds will not help, pick another --metric")
     pairs = sorted(set(ra) & set(rb))
+    if set(ra) != set(rb):
+        reasons_inconclusive.append(f"unmatched metric rounds (baseline only {sorted(set(ra) - set(rb))}; "
+                                    f"candidate only {sorted(set(rb) - set(ra))})")
     if clips or media:
         reasons_inconclusive += clip_seed_reasons(ra, rb, pairs)
     paired = len(pairs) >= 2
@@ -298,10 +436,6 @@ def compare(call, baseline, candidate, metric, threshold, resamples, seed, image
             reasons_inconclusive.append("media comparisons need at least three complete matching round pairs")
         if inter is not True:
             reasons_inconclusive.append("media comparison requires verified interleaving")
-        for rec, label in ((a, "baseline"), (b, "candidate")):
-            indices = [r.get("index") for r in rec.get("data", {}).get("rounds", [])]
-            if len(indices) != len(set(indices)):
-                reasons_inconclusive.append(f"{label} has duplicate round indices")
         windows = []
         for label, rows in (("baseline", ra), ("candidate", rb)):
             for index, row in rows.items():
@@ -354,12 +488,40 @@ def compare(call, baseline, candidate, metric, threshold, resamples, seed, image
                if ratio else f"{metric}: no ratio ({decision['reason']})")
     if image_tradeoff:
         summary = "image format/work tradeoff timing; quality requires separate evidence: " + summary
+    memory_summary = []
+    for key, name in (("peak_rss_mib", "peak RSS"), ("peak_vram_mib", "peak VRAM")):
+        if any(key in row for row in memory.values()):
+            values = []
+            for label in ("baseline", "candidate"):
+                measurement = memory[label].get(key)
+                if measurement is None:
+                    values.append(f"{label} unknown")
+                    continue
+                qualifiers = []
+                if measurement.get("method") == "sampled_process_group_rss":
+                    qualifiers.append("sampled")
+                if measurement.get("complete") is not True:
+                    qualifiers.append("partial" if measurement.get("complete") is False else "coverage unknown")
+                suffix = " (" + ", ".join(qualifiers) + ")" if qualifiers else ""
+                values.append(f"{label} {measurement['value']:.1f} MiB{suffix}")
+            memory_summary.append(name + " " + ", ".join(values))
+    if memory_summary:
+        summary += "; " + "; ".join(memory_summary)
+    env_differences = environment_differences(environments)
+    if env_differences:
+        note = ", ".join(env_differences[:4]) + (", ..." if len(env_differences) > 4 else "")
+        summary += "; server env differs: " + note
+        limitations.append("Requested server environment differs between arms; controls and preload identities "
+                           "are retained in data.arm_environment. Requested settings do not prove runtime dispatch.")
     metrics = [ev.metric(f"{metric}_ratio", ratio, "x", "ratio_of_medians", n=n, ci95=[lo, hi])]
     for rec, rounds, label in ((a, ra, "baseline"), (b, rb, "candidate")):
         vals = [r[metric] for r in rounds.values()]
         s = stats.summarize(vals)
         metrics.append(ev.metric(metric, s.get("median"), UNITS.get(metric) or ("tok/s" if higher else "ms"),
                                  "median", n=len(vals), subject=label))
+        for key, measurement in memory[label].items():
+            metrics.append(ev.metric(key, measurement["value"], "MiB", "max", subject=label))
+    lifecycle = {label: lifecycle_verdict(rec, arm_coverage[label]) for label, rec in (("baseline", a), ("candidate", b))}
     record = ev.build(call, kind="comparison", claim_class="derived", summary=summary, identity_=b["identity"],
                       metrics=metrics, missing=missing, limitations=limitations,
                       data={"verdict": decision["verdict"], "decision": decision, "metric": metric,
@@ -369,9 +531,12 @@ def compare(call, baseline, candidate, metric, threshold, resamples, seed, image
                             "resamples": resamples, "seed": seed,
                             "baseline": a["evidence_id"], "candidate": b["evidence_id"],
                             "baseline_identity": a["identity"],
+                            "arm_round_coverage": arm_coverage, "expected_rounds": expected_rounds,
+                            "memory": memory, "arm_environment": environments,
                             **({"source_kind": a["kind"], "required_proofs": {
-                                "media quality": "UNPROVEN", "fresh-process lifecycle": "UNPROVEN",
+                                "media quality": "UNPROVEN", "fresh-process lifecycle": "PASS" if all(v == "PASS" for v in lifecycle.values()) else "UNPROVEN",
                                 "repeated-run reliability": "UNPROVEN"},
+                                "arm_lifecycle_verdicts": lifecycle,
                                 "arm_timing_verdicts": {label: rec.get("data", {}).get("timing_verdict", "NOT RUN")
                                     for label, rec in (("baseline", a), ("candidate", b))}}
                                if media else {})})

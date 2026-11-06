@@ -151,7 +151,8 @@ def test_every_command_accepts_json_after_it():
         required = [a for a in op.args if a.required and not (a.name == "argv" and op.passthrough)]
         argv = list(op.cli)
         for a in required:
-            value = a.choices[0] if a.choices else "1" if a.type in ("integer", "number") else "x"
+            scalar_type = a.items if a.type == "array" else a.type
+            value = a.choices[0] if a.choices else "1" if scalar_type in ("integer", "number") else "x"
             argv += [value] if a.positional else [cli._flag(a.name), value]
         ns = parser.parse_args(argv + ["--json"])
         assert ns.json_output is True, op.cli

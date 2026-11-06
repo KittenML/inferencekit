@@ -14,6 +14,7 @@ import shlex
 from pathlib import Path
 
 from inferencekit.proc import run, which
+from inferencekit.cpuinfo import cpu_facts
 
 
 def _read(path: Path) -> str | None:
@@ -114,7 +115,7 @@ def discover_non_nvidia() -> dict:
     accelerator_interface = any(Path(p).exists() for p in ("/dev/dxg", "/dev/kfd", "/dev/dri"))
     backend = devices[0]["backend"] if devices else "unknown" if accelerator_interface else "cpu"
     return {"platform": backend, "devices": devices,
-            "cpu": {"architecture": platform.machine(), "logical_cores": os.cpu_count()},
+            "cpu": cpu_facts(),
             "limitations": (["Device identification does not prove runtime or profiler support; verify the exact "
                               "GPU, OS and installed runtime against current official docs and a smoke request."]
                             if devices else ["Accelerator identity is unknown; a device interface exists but vendor "
@@ -123,13 +124,19 @@ def discover_non_nvidia() -> dict:
                                              "device can also produce this result."])}
 
 
-def profiler_route(backend: str) -> dict:
+def profiler_route(backend: str, cpu: dict | None = None) -> dict:
+    if backend == "cpu":
+        perf = (cpu or {}).get("perf", {})
+        usable = perf.get("installed") and perf.get("access") == "policy_allows_user"
+        return {"timeline": "perf (user-space; verify access)" if usable else "engine per-layer timers / torch.profiler (CPU)",
+                "kernel": "perf stat/record" if usable else "engine per-layer timers / torch.profiler (CPU)",
+                "fallback": "engine per-layer timers / torch.profiler (CPU)",
+                "permission_verified": False,
+                "documentation": "https://www.kernel.org/doc/html/latest/admin-guide/perf-security.html"}
     return {
         "nvidia": {"timeline": "nsys", "kernel": "ncu", "documentation": "https://docs.nvidia.com/nsight-systems/"},
         "rocm": {"timeline": "rocprofv3", "kernel": "rocprofv3 counters (verify GPU support)",
                  "documentation": "https://rocm.docs.amd.com/projects/rocprofiler-sdk/en/latest/how-to/using-rocprofv3.html"},
         "metal": {"timeline": "Instruments Metal System Trace", "kernel": "Xcode Metal debugger / MLX capture",
                   "documentation": "https://developer.apple.com/documentation/xcode/optimizing-gpu-performance"},
-        "cpu": {"timeline": "perf / Instruments Time Profiler", "kernel": "platform CPU profiler",
-                "documentation": "https://www.kernel.org/doc/html/latest/admin-guide/perf-security.html"},
     }.get(backend, {"timeline": None, "kernel": None, "documentation": None})

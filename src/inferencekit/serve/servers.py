@@ -420,22 +420,24 @@ def wait_gpu_memory(baseline: list[int] | None, tolerance_mib: int, timeout_s: f
 
 # --------------------------------------------------------------------------- GPU lock
 
-def default_lock_path() -> Path:
-    env = os.environ.get("INFERENCEKIT_GPU_LOCK")
+def default_lock_path(resource: str = "GPU") -> Path:
+    env = os.environ.get(f"INFERENCEKIT_{resource}_LOCK")
     if env:
         return Path(env)
-    return Path(os.path.expanduser("~")) / ".cache" / "inferencekit" / "gpu.lock"
+    return Path(os.path.expanduser("~")) / ".cache" / "inferencekit" / f"{resource.lower()}.lock"
 
 
 @contextlib.contextmanager
-def gpu_lock(path: str | os.PathLike | None, owner: str):
+def gpu_lock(path: str | os.PathLike | None, owner: str, *, resource: str = "GPU"):
     """Hold an exclusive, non-blocking ``flock`` on ``path`` for the duration of the block.
 
     The kernel drops the lock if this process dies, so a crashed run never leaves a stale
     lock behind. The file holds the current holder's pid and owner string, for the error
     message another run prints.
     """
-    p = Path(path) if path else default_lock_path()
+    if resource not in ("GPU", "CPU"):
+        raise ValueError("resource must be GPU or CPU")
+    p = Path(path) if path else default_lock_path(resource)
     p.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(p, os.O_RDWR | os.O_CREAT, 0o644)
     try:
@@ -445,8 +447,10 @@ def gpu_lock(path: str | os.PathLike | None, owner: str):
             holder = os.pread(fd, 4096, 0).decode(errors="replace").strip() or "unknown holder"
         finally:
             os.close(fd)
-        raise OpError(f"GPU lock {p} is held by {holder}: another run is using the GPU. Wait for it, or pass "
-                      "a different --gpu-lock only if the runs use different GPUs.") from None
+        advice = ("a different --gpu-lock only if the runs use different GPUs." if resource == "GPU" else
+                  "a different --cpu-lock only if the runs use independent CPU resources.")
+        raise OpError(f"{resource} lock {p} is held by {holder}: another run is using the {resource}. Wait for it, "
+                      f"or pass {advice}") from None
     info = {"pid": os.getpid(), "owner": owner, "since": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
     try:
         os.ftruncate(fd, 0)

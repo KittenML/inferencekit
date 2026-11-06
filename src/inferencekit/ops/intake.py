@@ -349,8 +349,20 @@ def normalize(data: dict) -> tuple[dict, list[str], list[str]]:
         if "input_rate" not in io:
             warnings.append("io_modes.input_rate missing: the replay pace of streaming input is unknown")
 
-    d.setdefault("buckets", list(BUCKETS))
+    wl = d.setdefault("workload", {})
+    tts = wl.get("tts")
+    if tts is not None and modality != "tts":
+        errors.append("workload.tts applies only to modality tts")
+    text_buckets = (tts or {}).get("text_length_buckets", [])
+    names = [b["name"] for b in text_buckets]
+    if len(names) != len(set(names)):
+        errors.append("workload.tts.text_length_buckets names must be unique")
+    if any(b["max_chars"] < b["min_chars"] for b in text_buckets):
+        errors.append("workload.tts.text_length_buckets max_chars must be >= min_chars")
+    d.setdefault("buckets", names or list(BUCKETS))
     d["buckets"] = [b for b in BUCKETS if b in d["buckets"]]
+    if text_buckets and set(d["buckets"]) - set(names):
+        errors.append("buckets must be defined in workload.tts.text_length_buckets when character bounds are supplied")
     if modality in ("image", "video"):  # modality workload set, not text length buckets
         if targets.pop("buckets", None) is not None:
             warnings.append(f"goals.targets.buckets do not apply to modality {modality}: a target holds over the "
@@ -362,10 +374,19 @@ def normalize(data: dict) -> tuple[dict, list[str], list[str]]:
     elif any(k != "buckets" for k in targets):
         targets["buckets"] = list(d["buckets"])
 
-    wl = d.setdefault("workload", {})
-    wl.setdefault("max_tokens", 256)
+    if modality == "llm":
+        wl.setdefault("max_tokens", 256)
+        wl.setdefault("prompt_set", "dev")
+        if wl["max_tokens"] < 2:
+            errors.append("workload.max_tokens must be >= 2 for modality llm")
+    elif "max_tokens" in wl:
+        warnings.append(f"workload.max_tokens does not apply to modality {modality}; retained for compatibility, "
+                        "but unused by its timing client")
     wl.setdefault("rounds", 5)
-    wl.setdefault("prompt_set", "dev")
+    client = wl.get("client")
+    expected_client = {"llm": "bench_serve", "tts": "bench_audio", "image": "bench_image", "video": "bench_clip"}
+    if client is not None and client not in ("external", expected_client.get(modality)):
+        errors.append(f"workload.client {client!r} does not support modality {modality}")
     if needs_load:
         wl.setdefault("concurrency", list(DEFAULT_CONCURRENCY))
     if "concurrency" in wl:
@@ -532,9 +553,13 @@ def normalize(data: dict) -> tuple[dict, list[str], list[str]]:
     cands.setdefault("include", [])
     cands.setdefault("exclude", [])
     cands.setdefault("max_engines", 5)
-    if modality in ("tts", "stt"):
-        warnings.append(f"modality {modality}: bench serve times OpenAI-compatible text endpoints; audio "
-                        "latencies need a modality client, and claims without one are UNPROVEN")
+    if modality in ("tts", "stt") and client is None:
+        hint = "configure workload.client: bench_audio for speech synthesis, or external" if modality == "tts" else "configure workload.client: external for speech recognition"
+        warnings.append(f"modality {modality}: no audio timing client is configured; {hint}. "
+                        "Audio latency claims without a matching client are UNPROVEN")
+    if modality == "tts" and client == "bench_audio":
+        warnings.append("bench audio supplies client-timed speech screening; quality and fresh-process "
+                        "interleaved comparison remain UNPROVEN without their separate evidence")
     if modality == "image":
         warnings.append("modality image: bench serve token metrics and bench clip video metrics do not prove image "
                         "latency or quality; a client-timed image adapter and modality quality protocol are required; "
@@ -761,7 +786,9 @@ def derive(intake: dict) -> dict:
     if goals["lead"] == "capacity" or "n_star" in targets:
         modes.append("load")
     if intake["modality"] == "image":
-        modes = ["image"]  # requires an external image adapter; no built-in command implied
+        modes = ["image"]
+    if intake["modality"] == "tts" and intake["workload"].get("client") == "bench_audio":
+        modes = ["audio"]
     if intake["modality"] == "video":
         modes = ["clip"]  # bench rounds --mode clip: one clip at a time
     questions = []
@@ -1104,7 +1131,7 @@ model:
   kv_cache_dtype_allowed: [checkpoint_default]   # adding fp8 (when the checkpoint does not ship it) is lossy
   # tokenizer: <org/model-name>       # default: model.id
 
-modality: llm                         # llm | tts | stt | video
+modality: llm                         # llm | image | tts | stt | video
 
 hardware:
   gpu: RTX 5090
@@ -1145,10 +1172,14 @@ io_modes:
 buckets: [very_short, short, medium, long]   # 1-5 words / ~20-50 tok / ~300 tok / 2-4k tok
 
 workload:
-  max_tokens: 256                     # generated per request, identical for every engine (ignore_eos)
+  max_tokens: 256                     # LLM only: generated per request, identical for every engine (ignore_eos)
   rounds: 5                           # interleaved rounds across engines (>= 3)
   # concurrency: [1, 2, 4, 8, 16, 32, 64]   # load-mode grid (capacity)
   # chat_template_kwargs: {enable_thinking: false}   # binding pin: the manifest and every command must use it
+  # client: bench_audio               # TTS: omit max_tokens; bench_audio | external
+  # tts: {voice: default, sample_rate: 24000, lead_metric: first_audio_ms}
+  # TTS text_length_buckets: [{name: short, min_chars: 1, max_chars: 80}] inside tts
+  # io_modes.output selects streaming or complete utterance
 
 budget:
   gpu_hours: 6                        # GPU-hours = host hours x count
@@ -1185,7 +1216,7 @@ non_interactive: false                # true: never block; QUESTIONS.md + the co
 #   wheel: <path to inferencekit_cli-<version>-py3-none-any.whl>
 #   wheel_sha256: <sha256>
 # candidates:
-#   include: []                       # engines to add (e.g. a custom engine with an OpenAI API)
+#   include: []                       # engines to add (e.g. a custom engine with an OpenAI-compatible endpoint)
 #   exclude: []
 #   max_engines: 5
 """

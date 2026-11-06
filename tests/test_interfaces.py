@@ -26,6 +26,7 @@ CONTRACT_TOOLS |= {"bench_clip"}  # video (bench clip)
 CONTRACT_TOOLS |= {"bench_image", "bench_audio"}  # client-timed image and speech outputs
 CONTRACT_TOOLS |= {"gates_clip", "quality_clip", "quality_clip_steps"}  # video (gates, quality, per-step)
 CONTRACT_TOOLS |= {"capture_rocprof", "analyze_rocprof"}  # AMD profiling
+CONTRACT_TOOLS |= {"cpu_screen_manifest", "quality_audio_policy", "quality_audio"}
 
 
 def test_registry_matches_contract_tool_names():

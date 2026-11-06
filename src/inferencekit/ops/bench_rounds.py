@@ -39,6 +39,7 @@ from inferencekit.gpuinfo import gpu_identity
 from inferencekit.ops.doctor import gpu_processes
 from inferencekit.registry import Arg, OpError, operation
 from inferencekit.serve import rounds as rr
+from inferencekit.serve import media_rounds, round_evidence
 
 KIND = "serve_benchmark"
 
@@ -132,17 +133,19 @@ def _limitations(result: dict) -> tuple[list[str], list[str]]:
     return lim, missing
 
 
-@operation("bench_rounds", ("bench", "rounds"), "Run every engine of a run manifest for R balanced (Williams) "
-           "rounds, one server at a time: clean launch, readiness, warm-up, bench serve, /metrics, group stop, "
-           "GPU memory check, resolved-config capture; medians with CIs and ratio to best.",
+@operation("bench_rounds", ("bench", "rounds"), "Run manifest engines for balanced fresh-process rounds: "
+           "text, audio, image or video clients, CPU/GPU locking, cleanup and per-round evidence with CIs.",
            [Arg("manifest", "string", "Run manifest (runs/<run-id>/manifest.json); its 'engines' are launched.",
                 required=True),
-            Arg("prompts", "string", "Prompt set (JSONL) passed to every bench serve call (--mode clip: the clip "
-                "set, passed to every bench clip call).", required=True),
+            Arg("prompts", "string", "Shared JSONL prompt, speech, image or clip fixture set.", required=True),
             Arg("rounds", "integer", "Rounds; each runs every engine once. Default: the smallest multiple of the "
                 "Williams period that is at least 3, so the order is balanced (2 engines: 4, 3: 6, 4: 4, 5: 10)."),
-            Arg("mode", "string", "bench serve mode (single, load), or clip: video clip engines measured with bench "
-                "clip, --prompts is the clip set (JSONL).", default="single", choices=("single", "load", "clip")),
+            Arg("mode", "string", "Client: single/load text, audio, image or clip. Auto reads manifest modes, "
+                "modality, intake modality or endpoint kind; ambiguous modes require a selection.",
+                default="auto", choices=("auto", "single", "load", "clip", "audio", "image")),
+            Arg("device", "string", "Hardware route; auto reads hardware.backend from the manifest.", default="auto",
+                choices=("auto", "cpu", "gpu")),
+            Arg("cpu_lock", "string", "CPU-exclusive advisory lock (default $INFERENCEKIT_CPU_LOCK or ~/.cache/inferencekit/cpu.lock)."),
             Arg("engines", "string", "Comma-separated engine labels to run (default: every engine in the manifest)."),
             Arg("run_dir", "string", "Run directory for logs and results (default: the manifest's directory)."),
             Arg("gpu_lock", "string", "Lock file held for the whole run (default: $INFERENCEKIT_GPU_LOCK or "
@@ -185,27 +188,42 @@ def _limitations(result: dict) -> tuple[list[str], list[str]]:
                 "--rounds, the smallest whole number of Williams periods that is at least 3). Needs --ci-target.")])
 def bench_rounds(call, manifest, prompts, rounds, mode, engines, run_dir, gpu_lock, startup_timeout_s,
                  stop_timeout_s, serve_timeout_s, warmup, ref_e2e_ms, serve_args, serve_cmd, gpu_mem_tolerance_mib,
-                 chat_template_kwargs=None, extra_body=None, ci_target=None, min_rounds=None):
-    if mode == "clip":  # video clips: bench clip per cell (serve/clip_rounds.py); --prompts is the clip set
+                 chat_template_kwargs=None, extra_body=None, ci_target=None, min_rounds=None, device="auto", cpu_lock=None):
+    declared = rr.load_manifest(manifest)
+    device = round_evidence.resource_mode(declared, device)
+    mode = media_rounds.mode_for(declared, mode, manifest)
+    if device == "cpu" and mode == "load":
+        raise OpError("CPU load mode is not supported yet: capacity metrics use GPU denominators; use --mode single")
+    if mode in ("clip", "audio", "image"):
         unsupported = [flag for flag, value in (("--ci-target", ci_target), ("--min-rounds", min_rounds),
                                                 ("--ref-e2e-ms", ref_e2e_ms),
                                                 ("--chat-template-kwargs", chat_template_kwargs),
                                                 ("--extra-body", extra_body)) if value is not None]
         if unsupported:
-            raise OpError(f"{', '.join(unsupported)} not supported with --mode clip (bench clip times whole clips; "
+            raise OpError(f"{', '.join(unsupported)} not supported with --mode {mode} (media clients time complete outputs; "
                           "adaptive stop and text request settings do not apply)")
+    if mode == "clip":
         from inferencekit.serve.clip_rounds import bench_rounds_clip
         return bench_rounds_clip(call, manifest=manifest, clips=prompts, rounds=rounds, engines=engines,
                                  run_dir=run_dir, gpu_lock=gpu_lock, startup_timeout_s=startup_timeout_s,
                                  stop_timeout_s=stop_timeout_s, clip_timeout_s=serve_timeout_s, warmup=warmup,
-                                 clip_args=serve_args, clip_cmd=serve_cmd, gpu_mem_tolerance_mib=gpu_mem_tolerance_mib)
-    others = gpu_processes()
-    result = rr.run_rounds(manifest, prompts, rounds, mode, engines=engines, run_dir=run_dir,
+                                 clip_args=serve_args, clip_cmd=serve_cmd, gpu_mem_tolerance_mib=gpu_mem_tolerance_mib,
+                                 resource_mode=device, cpu_lock_path=cpu_lock)
+    others = [] if device == "cpu" else gpu_processes()
+    media = mode in ("audio", "image")
+    if media:
+        result = media_rounds.run_media_rounds(manifest, prompts, mode, rounds=rounds, engines=engines,
+                           run_dir=run_dir, device=device, cpu_lock=cpu_lock, gpu_lock=gpu_lock,
+                           startup_timeout_s=startup_timeout_s, stop_timeout_s=stop_timeout_s,
+                           serve_timeout_s=serve_timeout_s, warmup=warmup, serve_cmd=serve_cmd,
+                           serve_args=serve_args, gpu_mem_tolerance_mib=gpu_mem_tolerance_mib)
+    else:
+        result = rr.run_rounds(manifest, prompts, rounds, mode, engines=engines, run_dir=run_dir,
                            gpu_lock_path=gpu_lock, startup_timeout_s=startup_timeout_s,
                            stop_timeout_s=stop_timeout_s, serve_timeout_s=serve_timeout_s, warmup=warmup,
                            serve_cmd=serve_cmd, serve_args=serve_args, gpu_mem_tolerance_mib=gpu_mem_tolerance_mib,
                            ref_e2e_ms=ref_e2e_ms, chat_template_kwargs=chat_template_kwargs, extra_body=extra_body,
-                           ci_target=ci_target, min_rounds=min_rounds)
+                           ci_target=ci_target, min_rounds=min_rounds, resource_mode=device, cpu_lock_path=cpu_lock)
     plan, summary, rdir = result["plan"], result["summary"], Path(result["run_dir"])
     labels = [e["label"] for e in plan["engines"]]
     limitations, missing = _limitations(result)
@@ -224,10 +242,10 @@ def bench_rounds(call, manifest, prompts, rounds, mode, engines, run_dir, gpu_lo
     flags = {"engines": labels}
     if plan.get("extra_body"):
         flags["extra_body"] = plan["extra_body"]["value"]  # same body for every engine: part of what was measured
-    ident = ev.identity(gpu=gpu_identity(),
+    ident = ev.identity(gpu={} if device == "cpu" else gpu_identity(), cpu=plan.get("cpu"),
                         engine={"name": "+".join(labels), "flags": flags},
                         model={"id": m.get("id"), "revision": m.get("revision"), "dtype": m.get("precision")},
-                        workload={"mode": mode, "endpoint_kind": "openai_chat",
+                        workload={"mode": "single" if media else mode, "endpoint_kind": f"{mode}_http" if media else "openai_chat",
                                   "prompt_set": {"name": plan["prompts"]["name"],
                                                  "sha256": plan["prompts"]["sha256"]}})
     n_ok = sum(1 for c in result["cells"] if c.get("status") == "ok")
@@ -247,23 +265,25 @@ def bench_rounds(call, manifest, prompts, rounds, mode, engines, run_dir, gpu_lo
     if heads:
         h = heads[0]
         summary_line += f"; best {h['metric']} [{h['bucket']}]: {h['engine']} {h['median']:.4g} [{cls}]"
-    artifacts = [ev.artifact(rdir / "rounds" / name, rdir, role)
+    output_dir = f"{mode}_rounds" if media else "rounds"
+    artifacts = [ev.artifact(rdir / output_dir / name, rdir, role)
                  for name, role in (("summary.md", "summary"), ("summary.json", "summary"), ("plan.json", "plan"))
-                 if (rdir / "rounds" / name).is_file()]
+                 if (rdir / output_dir / name).is_file()]
     for c in result["cells"]:
-        log = rdir / c["log"]
+        log = rdir / c.get("log", "")
         if log.is_file():
             artifacts.append(ev.artifact(log, rdir, "server_log"))
         rc = (c.get("resolved_config") or {}).get("file")
         if rc and (rdir / rc).is_file():
             artifacts.append(ev.artifact(rdir / rc, rdir, "resolved_config"))
-    v2 = KIND in ev.KINDS
+    kind = f"{mode}_benchmark" if media else KIND
+    v2 = kind in ev.KINDS
     if not v2:
         limitations.append("evidence v2 (kind serve_benchmark) not available in this build: record written "
                            "without schema validation")
     cells = [{k: c.get(k) for k in ("round", "position", "label", "kind", "status", "served_model", "ready",
                                      "warmup", "serve", "stop", "gpu_memory", "resolved_config", "env", "log",
-                                     "metrics_source", "load_schedule", "t_start", "t_end", "detail")}
+                                     "metrics_source", "load_schedule", "t_start", "t_end", "detail", "resources", "server_env", "audio", "image")}
              for c in result["cells"]]
     if load:
         claim_classes = {"<metric>": "derived (median over rounds of bench serve's capacity record: N* and the "
@@ -272,7 +292,11 @@ def bench_rounds(call, manifest, prompts, rounds, mode, engines, run_dir, gpu_lo
     else:
         claim_classes = {"<metric>": "observed (median over rounds of bench serve's client-side timings)",
                          "<metric>_ratio_to_best": "derived"}
-    record = ev.build(call, kind=KIND if v2 else "benchmark", claim_class=cls, summary=summary_line,
+    if media:
+        claim_classes = {"<latency>": "observed client timer, except simulated first-audio onset (derived)",
+                         "<rate>, rtf, <metric>_ratio_to_best": "derived",
+                         "peak_rss_mib": "observed sampled server process-group RSS"}
+    record = ev.build(call, kind=kind if v2 else "benchmark", claim_class=cls, summary=summary_line,
                       identity_=ident, metrics=metrics, artifacts=artifacts, missing=missing,
                       limitations=limitations,
                       data={"run_dir": str(rdir), "plan": plan, "cells": cells, "rows": summary["rows"],
@@ -281,7 +305,9 @@ def bench_rounds(call, manifest, prompts, rounds, mode, engines, run_dir, gpu_lo
                             "resolved_config": result["resolved_config"],
                             "bench_serve_evidence": [c["serve"]["evidence_id"] for c in result["cells"]
                                                      if (c.get("serve") or {}).get("evidence_id")],
-                            "gpu_processes_at_start": len(others), "markdown": result["markdown"]})
+                            **({f"bench_{mode}_evidence": list(plan.get(f"{mode}_evidence_final", {}).values())}
+                               if media else {}),
+                            "gpu_processes_at_start": None if device == "cpu" else len(others), "markdown": result["markdown"]})
     store = ev.Store()
     if v2:
         rec = store.save(record)

@@ -63,7 +63,9 @@ def claims_of(rec: dict, expect: str, integrity: dict) -> list[dict]:
         if data.get("source_kind") in ("image_benchmark", "audio_benchmark"):
             for claim, proof in data.get("required_proofs", {}).items():
                 out.append({"source": eid, "claim": claim, "verdict": proof,
-                            "reason": "A timing comparison does not supply this proof; cite external modality evidence."})
+                            "reason": "Bound scheduler records confirm fresh launches, readiness and process-group cleanup."
+                            if claim == "fresh-process lifecycle" and proof == "PASS" else
+                            "A timing comparison does not supply this proof; cite external modality evidence."})
             if data.get("source_kind") == "audio_benchmark":
                 for arm, timing in data.get("arm_timing_verdicts", {}).items():
                     out.append({"source": eid, "claim": f"{arm} speech latency and streaming SLOs",
@@ -82,6 +84,13 @@ def claims_of(rec: dict, expect: str, integrity: dict) -> list[dict]:
         out.append({"source": eid, "claim": "media quality and usability",
                     "verdict": "UNPROVEN", "reason": "Timing and structural checks do not establish image quality, "
                     "speech intelligibility, speaker fidelity or repeated-run reliability; cite task-specific quality evidence."})
+    elif kind == "quality_audio":
+        from inferencekit.ops.quality_audio import report_verdict
+
+        verdict, reason = report_verdict(rec)
+        if data.get("source") == "quality audio":
+            out.append({"source": eid, "claim": "speech quality preservation against baseline",
+                        "verdict": verdict, "reason": reason})
     elif kind == "correctness":
         out.append({"source": eid, "claim": "greedy outputs agree", "verdict": data.get("verdict", "UNPROVEN"),
                     "reason": data.get("reason", "")})
@@ -126,16 +135,45 @@ def workload_text(w: dict) -> str:
 
 
 def environment_rows(recs: list[dict]) -> list[dict]:
+    from inferencekit.serve.round_evidence import memory_of
+
     seen, rows = set(), []
-    for r in recs:
-        i = r.get("identity", {})
+    identities = []
+    for record in recs:
+        if record.get("kind") == "comparison" and record.get("data", {}).get("baseline_identity"):
+            memories = record["data"].get("memory") or {}
+            identities.append((record["data"]["baseline_identity"], memories.get("baseline", {})))
+            identities.append((record.get("identity", {}), memories.get("candidate", {})))
+        else:
+            identities.append((record.get("identity", {}), memory_of(record)))
+    for i, memory in identities:
         g, e, m, w = i.get("gpu", {}), i.get("engine", {}), i.get("model", {}), i.get("workload", {})
+        cpu = i.get("cpu") or {}
         gpu = g.get("name") or "?"
-        row = {"gpu": f"{g['count']}x {gpu}" if g.get("count") else gpu,
-               "driver / CUDA": f"{g.get('driver') or '?'} / {g.get('cuda') or '?'}", "clocks": g.get("clocks") or "?",
+        gpu_label = f"{g['count']}x {gpu}" if g.get("count") else gpu
+        tuning = (e.get("flags") or {}).get("server_env")
+        controls = (tuning or {}).get("controls") or {}
+        parts = [f"{k}={v if v is not None else 'unknown'}" for k, v in sorted(controls.items())]
+        for lib in (tuning or {}).get("ld_preload") or []:
+            parts.append("LD_PRELOAD=" + (lib.get("name") or "redacted") + " (" +
+                         (lib.get("sha256") or lib.get("status") or "unverified") + ")")
+        if (tuning or {}).get("varied_between_rounds"):
+            parts.append("changed between rounds")
+        memory_parts = []
+        for name, measurement in memory.items():
+            qualifiers = [measurement["method"]] if measurement.get("method") else []
+            if measurement.get("complete") is not True:
+                qualifiers.append("partial" if measurement.get("complete") is False else "coverage unknown")
+            memory_parts.append(f"{name}: {_fmt(measurement.get('value'))} MiB" +
+                                (" (" + "; ".join(qualifiers) + ")" if qualifiers else ""))
+        row = {"gpu": gpu_label, "hardware": "CPU: " + (cpu.get("model") or "unknown") if cpu else gpu_label,
+               "driver / CUDA": "n/a" if cpu else f"{g.get('driver') or '?'} / {g.get('cuda') or '?'}",
+               "clocks": g.get("clocks") or "?",
                "engine": " ".join(str(x) for x in (e.get("name"), e.get("version")) if x) or "-",
                "model": " ".join(str(x) for x in (m.get("id"), m.get("dtype"), m.get("quant")) if x) or "-",
-               "workload": workload_text(w)}
+               "workload": workload_text(w), "peak memory": "; ".join(memory_parts) or "unknown",
+               "server tuning (requested)": "; ".join(parts) if parts else (
+                   "none recorded" if tuning is not None else "unknown")}
         key = json.dumps(row, sort_keys=True)
         if key not in seen:
             seen.add(key)
@@ -239,6 +277,27 @@ def _subject(rec: dict, m: dict) -> str:
 def build_report(recs: list[dict], expect: str, title: str) -> dict:
     integrity = {r["evidence_id"]: ev.verify(r) for r in recs}
     claims = [c for r in recs for c in claims_of(r, expect, integrity[r["evidence_id"]])]
+    # Quality attaches only to the exact compared pair. A newer PASS cannot erase an
+    # earlier FAIL, and proxy acceptance is labelled rather than called listening.
+    audio_quality = [r for r in recs if r.get("kind") == "quality_audio" and
+                     r.get("data", {}).get("source") == "quality audio"]
+    for rec in recs:
+        data = rec.get("data", {})
+        if rec.get("kind") != "comparison" or data.get("source_kind") != "audio_benchmark":
+            continue
+        matched = [q for q in audio_quality if all(q["data"].get(k) == data.get(k)
+                                                  for k in ("baseline", "candidate"))]
+        if not matched or not integrity[rec["evidence_id"]]["id_ok"]:
+            continue
+        from inferencekit.ops.quality_audio import report_verdict
+
+        verdicts = [report_verdict(q) for q in matched]
+        for claim in claims:
+            if claim["source"] == rec["evidence_id"] and claim["claim"] == "media quality":
+                prior = claim["verdict"]
+                claim["verdict"] = stats.combine_claims([v[0] for v in verdicts] + ([prior] if prior == "FAIL" else []))
+                claim["claim"] = "speech quality preservation against baseline"
+                claim["reason"] = "; ".join(f"{q['evidence_id']}: {v[1]}" for q, v in zip(matched, verdicts))
     verdict = stats.combine_claims(c["verdict"] for c in claims)
     results = []
     for r in recs:
@@ -269,7 +328,11 @@ def to_markdown(rep: dict) -> str:
     else:
         lines.append("No comparison, correctness or benchmark evidence: nothing was claimed (NOT RUN).")
     lines += ["", "## Environment card", ""]
-    cols = ["gpu", "driver / CUDA", "clocks", "engine", "model", "workload"]
+    cols = ["hardware", "driver / CUDA", "clocks", "engine", "model", "workload"]
+    if any(row.get("peak memory") != "unknown" for row in rep["environment"]):
+        cols.append("peak memory")
+    if any(row.get("server tuning (requested)") not in ("unknown", "none recorded") for row in rep["environment"]):
+        cols.append("server tuning (requested)")
     lines += ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
     lines += ["| " + " | ".join(_cell(row[c]) for c in cols) + " |" for row in rep["environment"]]
     lines += ["", "## Results", "", "| evidence | metric | subject | value | unit | stat | n | 95% CI |",

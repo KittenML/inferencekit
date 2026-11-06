@@ -23,9 +23,14 @@
     },
     "hardware": {
       "type": "object",
-      "required": ["gpu", "count"],
+      "required": ["count"],
+      "if": {"properties": {"backend": {"const": "cpu"}}, "required": ["backend"]},
+      "then": {"required": ["cpu"], "not": {"required": ["gpu"]}},
+      "else": {"required": ["gpu"]},
       "additionalProperties": false,
       "properties": {
+        "backend": {"enum": ["cpu", "cuda", "rocm", "metal"], "description": "CPU hosts use an exclusive CPU lock and process-group RSS; other backends retain the GPU route."},
+        "cpu": {"type": "object", "required": ["model"], "properties": {"model": {"type": "string", "minLength": 1}}, "description": "CPU identity from doctor or cpu screen-manifest; optional topology and allowed CPU facts."},
         "gpu": {"type": "string", "minLength": 1, "description": "GPU model as nvidia-smi names it, or a substring of that name (e.g. 'RTX 5090')."},
         "count": {"type": "integer", "minimum": 1},
         "price_usd_h": {"type": ["number", "null"], "minimum": 0}
@@ -51,7 +56,7 @@
           "ready_check": {"type": "string", "description": "HTTP path polled until it returns 200, e.g. /v1/models or /health."},
           "resolved_config": {"type": "object", "description": "What the engine logged it actually used."},
           "role": {"enum": ["baseline-recipe", "tuned", "custom"]},
-          "endpoint_kind": {"enum": ["clip_http", "comfyui"], "description": "bench rounds --mode clip: how bench clip reaches the engine (default clip_http)."},
+          "endpoint_kind": {"enum": ["clip_http", "comfyui", "audio_http", "image_http", "openai_chat"], "description": "Client contract for bench rounds. Audio and image use the contracts in docs/media-benchmarks.md."},
           "workflow": {"type": "string", "description": "comfyui: the API-format workflow JSON (a path relative to the manifest is resolved there)."}
         }
       }
@@ -59,12 +64,18 @@
     "workload": {
       "type": "object",
       "required": ["modes"],
-      "if": {"properties": {"modes": {"contains": {"const": "clip"}}}, "required": ["modes"]},
-      "then": {"required": ["clips"]},
-      "else": {"required": ["buckets", "max_tokens"]},
+      "allOf": [
+        {"if": {"properties": {"modes": {"contains": {"const": "clip"}}}}, "then": {"required": ["clips"]}},
+        {"if": {"properties": {"modes": {"contains": {"enum": ["single", "load"]}}}}, "then": {"required": ["buckets", "max_tokens"]}}
+      ],
       "additionalProperties": false,
       "properties": {
-        "modes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["single", "load", "clip"]}},
+        "modes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["single", "load", "clip", "audio", "image"]}},
+        "modality": {"enum": ["llm", "text", "tts", "audio", "image", "video"]},
+        "sample_rate": {"type": "integer", "minimum": 1},
+        "channels": {"type": "integer", "minimum": 1, "maximum": 8},
+        "settings": {"type": "object", "description": "Audio/image generation settings passed unchanged to every arm."},
+        "quant": {"type": "string", "description": "Declare none for unquantized weights."},
         "clips": {"type": "string", "description": "Clip set JSONL for --mode clip (sha256 pinned by bench clip records)."},
         "buckets": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["very_short", "short", "medium", "long"]}},
         "max_tokens": {"type": "integer", "minimum": 1},

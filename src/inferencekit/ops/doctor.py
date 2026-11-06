@@ -23,6 +23,7 @@ from importlib import metadata
 from pathlib import Path
 
 from inferencekit import evidence as ev
+from inferencekit.cpuinfo import cpu_facts, cpu_identity
 from inferencekit.gpuinfo import clocks_state, driver_cuda_version, query_gpus
 from inferencekit.hardware import discover_non_nvidia, profiler_route
 from inferencekit.proc import run, tool_version, which
@@ -368,7 +369,7 @@ def gpu_processes() -> list[dict]:
     return out
 
 
-@operation("doctor", ("doctor",), "Hardware identity and profiling route (NVIDIA, AMD ROCm, Apple Metal); "
+@operation("doctor", ("doctor",), "Hardware identity and profiling route (NVIDIA, AMD ROCm, Apple Metal, CPU); "
            "selected AMD/Apple OS facts; NVIDIA driver, CUDA, clocks, nsys/ncu and profiling-counter permission "
            "(driver setting and CAP_SYS_ADMIN, never assumed from root), engine versions; optionally a tiny ncu and "
            "nsys test capture.",
@@ -384,6 +385,8 @@ def doctor(call, python, probe_profilers=False):
     hardware = None if gpus else discover_non_nvidia()
     if hardware and (hardware["devices"] or hardware["platform"] == "unknown"):
         return _vendor_doctor(call, python, probe_profilers, hardware)
+    if hardware and hardware["platform"] == "cpu":
+        return _cpu_doctor(call, python, probe_profilers, hardware)
     limitations, missing = [], []
     if not gpus:
         missing.append("gpu")
@@ -447,6 +450,42 @@ def doctor(call, python, probe_profilers=False):
         data["profiler_probe"] = probe
     record = ev.build(call, kind="environment", claim_class="observed", summary=summary, identity_=ident,
                       metrics=[ev.metric("gpu_count", len(gpus), "count", "observed")], missing=missing,
+                      limitations=limitations, data=data)
+    return ev.Store().save(record)
+
+
+def _cpu_doctor(call, python, probe_profilers, hardware):
+    facts = hardware.get("cpu") or cpu_facts()
+    hardware = {**hardware, "cpu": facts}
+    limitations = list(hardware.get("limitations", [])) + list(facts.get("limitations", []))
+    limitations += ["NVIDIA-only ceiling bw and nsys/ncu capture are NOT RUN on CPU.",
+                    "CPU profiler permission is inferred from policy only; containers and security policy may still block perf.",
+                    facts["library_dispatch"]["reason"]]
+    engines = engine_versions(python)
+    # Package metadata is a presence/version observation, never a framework import or dispatch probe.
+    libraries = {}
+    for name in ("numpy", "scipy", "mkl", "intel-openmp", "onednn"):
+        if not python or os.path.realpath(python) == os.path.realpath(sys.executable):
+            try:
+                libraries[name] = metadata.version(name)
+            except metadata.PackageNotFoundError:
+                pass
+    facts["library_dispatch"]["package_versions"] = libraries
+    data = {"hardware": hardware, "gpus": [], "tools": {"perf": tool_version("perf")},
+            "profiling_route": profiler_route("cpu", facts),
+            "profiling_counters": {"status": "not_applicable", "reason": "NVIDIA counters do not apply; CPU perf policy is in hardware.cpu.perf"},
+            "nvcc_toolkit": None, "engines": engines, "llamacpp": llamacpp_version(), "gpu_processes": [],
+            "env_set": sorted(facts.get("tuning_env", {}))}
+    if probe_profilers:
+        data["profiler_probe"] = {"program": None, "ncu": {"ran": False, "capture_ok": None, "error": "NVIDIA-only probe"},
+                                  "nsys": {"ran": False, "capture_ok": None, "error": "NVIDIA-only probe"}}
+        limitations.append("--probe-profilers is NVIDIA-only; no CPU workload or capture was launched.")
+    record = ev.build(call, kind="environment", claim_class="observed",
+                      summary=f"CPU {facts.get('model') or facts['architecture']}; {facts.get('physical_cores')} physical / "
+                              f"{facts.get('logical_cores')} logical cores; perf policy {facts['perf']['access']}; dispatch unverified",
+                      identity_=ev.identity(cpu=cpu_identity(facts)),
+                      metrics=[ev.metric("cpu_logical_cores", facts.get("logical_cores"), "count", "observed")],
+                      missing=["CPU runtime library dispatch", "verified CPU profiler permission"],
                       limitations=limitations, data=data)
     return ev.Store().save(record)
 

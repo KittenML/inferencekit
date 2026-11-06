@@ -50,6 +50,7 @@ from pathlib import Path
 from inferencekit import evidence as ev
 from inferencekit import stats
 from inferencekit.canonical import canonical_json, file_sha256
+from inferencekit.cpuinfo import cpu_identity
 from inferencekit.gpuinfo import gpu_identity
 from inferencekit.ops.intake import apply_pin, intake_pin
 from inferencekit.registry import Arg, Call, OpError, operation
@@ -369,15 +370,20 @@ async def _check_server(ep, model) -> tuple[list[str], dict]:
 
 def _identity(ep, gpu_name, gpu_count, engine_kind, engine_version, model, workload):
     missing = []
-    if gpu_name:
+    cpu = cpu_identity() if ep.is_local() and os.environ.get("INFERENCEKIT_CPU_LOCK_HELD") else None
+    if cpu is not None:
+        gpu = {}
+    elif gpu_name:
         gpu = {"name": gpu_name, "count": gpu_count}
     elif ep.is_local():
         gpu = gpu_identity() or {}
     else:
         gpu = {"count": gpu_count}
-    if not gpu.get("name"):
+    if cpu is not None and not cpu.get("model"):
+        missing.append("cpu identity")
+    elif cpu is None and not gpu.get("name"):
         missing.append("gpu identity (remote server or no nvidia-smi: pass --gpu-name)")
-    ident = ev.identity(gpu=gpu, engine={"name": engine_kind, "version": engine_version}, model={"id": model},
+    ident = ev.identity(gpu=gpu, cpu=cpu, engine={"name": engine_kind, "version": engine_version}, model={"id": model},
                         workload=workload)
     return ident, missing
 
@@ -447,6 +453,11 @@ def bench_serve(call, base_url, model, prompts, api, engine_kind, mode, max_toke
         ep = cl.Endpoint.parse(base_url, cl.api_key_from_env(api_key_env))
     except ValueError as e:
         raise OpError(str(e)) from None
+    if ep.is_local() and os.environ.get("INFERENCEKIT_CPU_LOCK_HELD"):
+        if mode == "load":
+            raise OpError("CPU load mode is not supported: capacity metrics currently use GPU normalization; use --mode single")
+        if gpu_name or gpu_count != 1:
+            raise OpError("CPU rounds cannot use --gpu-name or a non-default --gpu-count")
     if warmup < 0:
         raise OpError("warmup must be >= 0")
     pset = prompts_io.load(prompts, buckets or None, limit_per_bucket or None)

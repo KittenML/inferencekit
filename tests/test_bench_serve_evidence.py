@@ -87,3 +87,14 @@ def test_schema_files_are_valid_json_schema(name):
     import jsonschema
 
     jsonschema.Draft202012Validator.check_schema(json.loads((REPO / "schemas" / name).read_text()))
+
+
+def test_local_cpu_scheduler_identity_does_not_probe_gpu(monkeypatch):
+    from inferencekit.ops import bench_serve
+    from inferencekit.serve.client import Endpoint
+    monkeypatch.setenv("INFERENCEKIT_CPU_LOCK_HELD", "/test/cpu.lock")
+    monkeypatch.setattr(bench_serve, "gpu_identity", lambda: pytest.fail("CPU child probed GPU identity"))
+    monkeypatch.setattr(bench_serve, "cpu_identity", lambda: {"model": "test CPU", "architecture": "test"})
+    identity, missing = bench_serve._identity(Endpoint.parse("http://127.0.0.1:1"), None, 1, "custom", "v1", "m", {})
+    assert identity["cpu"]["model"] == "test CPU" and identity["gpu"]["name"] is None
+    assert missing == []

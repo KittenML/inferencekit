@@ -6,6 +6,8 @@
   "type": "object",
   "required": ["model", "modality", "hardware"],
   "additionalProperties": false,
+  "allOf": [{"if": {"properties": {"modality": {"const": "llm"}}, "required": ["modality"]},
+             "then": {"properties": {"workload": {"properties": {"max_tokens": {"minimum": 2}}}}}}],
   "properties": {
     "intake_version": {"const": 1},
     "run_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
@@ -135,10 +137,30 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "max_tokens": {"type": "integer", "minimum": 2, "default": 256},
+        "max_tokens": {"type": "integer", "minimum": 1, "description": "LLM output length (minimum 2, default 256). Optional and unused for media workloads."},
         "rounds": {"type": "integer", "minimum": 3, "default": 5},
         "concurrency": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 1}},
-        "prompt_set": {"type": "string", "default": "dev"},
+        "prompt_set": {"type": "string", "description": "LLM prompt set (default dev)."},
+        "client": {"enum": ["bench_serve", "bench_audio", "bench_image", "bench_clip", "external"], "description": "Configured timing client; selecting one declares the route, not successful measurement or quality proof."},
+        "tts": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "voice": {"type": "string", "minLength": 1},
+            "sample_rate": {"type": "integer", "minimum": 1},
+            "lead_metric": {"enum": ["rtf", "first_audio_ms", "complete_audio_ms"]},
+            "text_length_buckets": {
+              "type": "array", "minItems": 1,
+              "items": {"type": "object", "additionalProperties": false,
+                "required": ["name", "min_chars", "max_chars"],
+                "properties": {
+                  "name": {"enum": ["very_short", "short", "medium", "long"]},
+                  "min_chars": {"type": "integer", "minimum": 1},
+                  "max_chars": {"type": "integer", "minimum": 1}
+                }
+              }
+            }
+          }
+        },
         "chat_template_kwargs": {"type": "object", "description": "Pre-registered template settings, e.g. {\"enable_thinking\": false} for a reasoning model. The intake itself sends nothing: intake validate records the pin in intake.normalized.json and state.json; manifest validate and bench rounds refuse a run manifest whose workload.chat_template_kwargs leaves out or changes a pinned key; bench serve, gates run and quality trajectory/gsm8k/niah with --run-dir add the pinned keys to every chat request and refuse a different value."}
       }
     },

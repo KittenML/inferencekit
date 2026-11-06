@@ -44,7 +44,9 @@ ARGS = [
     Arg("quant", "string", "Quantization label, sent and required in effective settings."),
     Arg("label", "string", "Engine configuration label.", default="image_http"),
     Arg("engine_version", "string", "Pinned engine version or commit."),
-    Arg("gpu_name", "string", "Exact GPU model (required; image service may be remote).", required=True),
+    Arg("gpu_name", "string", "Exact GPU model (required for GPU mode; image service may be remote)."),
+    Arg("hardware_name", "string", "CPU model for --device cpu; never inferred from the remote client."),
+    Arg("device", "string", "Server hardware class.", default="gpu", choices=("gpu", "cpu")),
     Arg("gpu_count", "integer", "Number of GPUs serving images.", default=1),
     Arg("rounds", "integer", "Timed passes over the image fixtures.", default=3),
     Arg("first_round", "integer", "First round index; defaults to zero, or previous last + 1 with extend."),
@@ -188,6 +190,8 @@ def _previous(store, ref, rcall, ident):
     previous = store.load(ref)
     if previous.get("kind") != KIND or ev.integrity_problem(previous):
         raise OpError("extend needs an intact image benchmark record")
+    if previous.get("data", {}).get("scheduler_final"):
+        raise OpError("extend cannot append to a finalized scheduler record; start a new bench rounds run")
     if previous["identity"] != ident:
         raise OpError("extend needs identical workload, model, engine version and hardware")
     old_args = previous.get("data", {}).get("request", {}).get("args", {})
@@ -208,11 +212,15 @@ def _previous(store, ref, rcall, ident):
            "seeds, effective-setting/cache gates and image artifacts; semantic quality remains UNPROVEN.", ARGS)
 def bench_image(call, base_url, prompts, model, model_revision, dtype, quant, label, engine_version, gpu_name,
                 gpu_count, rounds, first_round, warmup, seed_policy, seed_base, seeds, timeout_s, resamples,
-                save_outputs, api_key_env, run_dir, extend, allow_cache="none"):
+                save_outputs, api_key_env, run_dir, extend, allow_cache="none", hardware_name=None, device="gpu"):
     if not _LABEL.fullmatch(label or ""):
         raise OpError("image label must be a safe 1-64 character filename")
-    if not model.strip() or not gpu_name.strip():
-        raise OpError("model and gpu_name must be non-empty")
+    if not model.strip() or not ((hardware_name if device == "cpu" else gpu_name) or "").strip():
+        raise OpError("model and server hardware must be non-empty: --hardware-name for CPU or --gpu-name for GPU")
+    if device == "cpu" and gpu_name:
+        raise OpError("--gpu-name cannot describe a CPU server; use --hardware-name")
+    if device == "cpu" and gpu_count != 1:
+        raise OpError("do not set --gpu-count for a CPU server")
     if not 1 <= rounds <= 10000 or not 0 <= warmup <= 100 or not 1 <= gpu_count <= 1024:
         raise OpError("rounds, warmup or gpu_count is outside its finite bound")
     if not 1 <= resamples <= 100000 or first_round is not None and not 0 <= first_round <= 1000000:
@@ -237,7 +245,8 @@ def bench_image(call, base_url, prompts, model, model_revision, dtype, quant, la
     rset = request_set(fixtures, model, pins, seed_policy, seed_base, seeds, allow_cache)
     uniform = {key: fixtures[0][key] if all(row[key] == fixtures[0][key] for row in fixtures) else None
                for key in ("width", "height", "steps", "guidance_scale")}
-    ident = ev.identity(gpu={"name": gpu_name, "count": gpu_count},
+    ident = ev.identity(gpu={"name": gpu_name, "count": gpu_count} if device == "gpu" else None,
+                        cpu={"model": hardware_name} if device == "cpu" else None,
                         engine={"name": label, "version": engine_version},
                         model={"id": model, "revision": model_revision, "dtype": dtype, "quant": quant},
                         workload={"mode": "single", "batch": 1, "task": "t2i", "endpoint_kind": "image_http",
