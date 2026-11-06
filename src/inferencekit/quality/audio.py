@@ -22,6 +22,7 @@ POLICY_FORMAT = "inferencekit.quality.audio.policy.v1"
 SCORES_FORMAT = "inferencekit.quality.audio.scores.v1"
 RESULT_FORMAT = "inferencekit.quality.audio.v1"
 NORMALIZATIONS = ("whitespace_v1", "nfkc_casefold_punctuation_v1")
+ASR_METRICS = ("wer", "cer")
 
 
 def sha(data: bytes) -> str:
@@ -60,23 +61,23 @@ def validate_policy(doc):
     if type(out["allow_numerics_change"]) is not bool or out["normalization"] not in NORMALIZATIONS:
         raise OpError("invalid audio numerical-change or normalization policy")
     metrics, scorers = out["metrics"], out["scorers"]
-    if not isinstance(metrics, dict) or set(metrics) - {"wer", "naturalness", "speaker", "listening"}:
+    if not isinstance(metrics, dict) or set(metrics) - {"wer", "cer", "naturalness", "speaker", "listening"}:
         raise OpError("unknown audio quality metric")
     if not isinstance(scorers, dict) or set(scorers) - {"asr", "asr_retry", "naturalness", "speaker", "listening"}:
         raise OpError("unknown audio scorer")
-    if out["acceptance"] != "exact" and not {"wer", "naturalness"}.issubset(metrics):
-        raise OpError("noninferiority requires registered WER and naturalness margins")
+    if out["acceptance"] != "exact" and (not set(ASR_METRICS).intersection(metrics) or "naturalness" not in metrics):
+        raise OpError("noninferiority requires registered WER or CER (or both) and naturalness margins")
     if out["acceptance"] == "perceptual_and_task_noninferiority" and "listening" not in metrics:
         raise OpError("perceptual acceptance requires a registered listening metric")
     for name, spec in metrics.items():
-        allowed = {"margin", "outlier_wer"} if name == "wer" else {"margin", "min_raters"} if name == "listening" else {"margin"}
+        allowed = {"margin", f"outlier_{name}"} if name in ASR_METRICS else {"margin", "min_raters"} if name == "listening" else {"margin"}
         if not isinstance(spec, dict) or set(spec) - allowed or not finite(spec.get("margin")) or spec["margin"] < 0:
             raise OpError(f"{name} requires a finite nonnegative margin")
-        if name == "wer" and (not finite(spec.get("outlier_wer")) or spec["outlier_wer"] <= 0):
-            raise OpError("WER requires a positive outlier_wer threshold, registered before decoding")
+        if name in ASR_METRICS and (not finite(spec.get(f"outlier_{name}")) or spec[f"outlier_{name}"] <= 0):
+            raise OpError(f"{name.upper()} requires a positive outlier_{name} threshold, registered before decoding")
         if name == "listening" and (type(spec.get("min_raters")) is not int or spec["min_raters"] < 2):
             raise OpError("listening requires min_raters >= 2")
-        scorer = "asr" if name == "wer" else name
+        scorer = "asr" if name in ASR_METRICS else name
         if scorer not in scorers:
             raise OpError(f"{name} requires a pinned {scorer} scorer")
     for name, spec in scorers.items():
@@ -214,10 +215,21 @@ def parity(baseline: bytes, candidate: bytes, channels: int):
 
 
 def words(text, normalization):
+    """Split Unicode whitespace; optional NFKC, casefold and P* to spaces, in order."""
     if normalization == "nfkc_casefold_punctuation_v1":
         text = unicodedata.normalize("NFKC", text).casefold()
         text = "".join(" " if unicodedata.category(c).startswith("P") else c for c in text)
     return text.split()
+
+
+def _edit_distance(ref, hyp):
+    previous = list(range(len(hyp) + 1))
+    for i, unit in enumerate(ref, 1):
+        current = [i]
+        for j, other in enumerate(hyp, 1):
+            current.append(min(current[-1] + 1, previous[j] + 1, previous[j - 1] + (unit != other)))
+        previous = current
+    return previous[-1]
 
 
 def word_error(reference, hypothesis, normalization):
@@ -225,14 +237,27 @@ def word_error(reference, hypothesis, normalization):
     ref, hyp = words(reference, normalization), words(hypothesis, normalization)
     if not ref:
         raise OpError("fixture has no words after the registered normalization")
-    previous = list(range(len(hyp) + 1))
-    for i, word in enumerate(ref, 1):
-        current = [i]
-        for j, other in enumerate(hyp, 1):
-            current.append(min(current[-1] + 1, previous[j] + 1, previous[j - 1] + (word != other)))
-        previous = current
-    return {"errors": previous[-1], "words": len(ref), "wer": previous[-1] / len(ref),
+    errors = _edit_distance(ref, hyp)
+    return {"errors": errors, "words": len(ref), "wer": errors / len(ref),
             "hypothesis_words": len(hyp)}
+
+
+def character_error(reference, hypothesis, normalization):
+    """CER over Unicode code points, not bytes or grapheme clusters; no whitespace.
+
+    Both named normalizations use ``words``' text transforms, then remove every
+    Unicode whitespace separator. ``whitespace_v1`` preserves case, punctuation
+    and Unicode form. ``nfkc_casefold_punctuation_v1`` applies NFKC, casefold and
+    maps Unicode P* punctuation to spaces, in that order, before removing spaces.
+    Combining marks remaining after normalization are separate character units.
+    Insertions can make CER exceed one; an empty hypothesis is all deletions.
+    """
+    ref, hyp = ("".join(words(text, normalization)) for text in (reference, hypothesis))
+    if not ref:
+        raise OpError("fixture has no characters after the registered normalization")
+    errors = _edit_distance(ref, hyp)
+    return {"errors": errors, "characters": len(ref), "cer": errors / len(ref),
+            "hypothesis_characters": len(hyp)}
 
 
 def scaled(value, scorer):
@@ -286,13 +311,15 @@ def load_scores(path, protocol_id, baseline_id, candidate_id, policy, sources, t
         values = {}
         if "asr" in item:
             asr = item["asr"]
-            if "wer" not in policy["metrics"] or not isinstance(asr, dict) or set(asr) - {"text", "retry_text"}:
+            if not set(ASR_METRICS).intersection(policy["metrics"]) or not isinstance(asr, dict) or set(asr) - {"text", "retry_text"}:
                 raise OpError("invalid ASR observation")
-            for source, dest in (("text", "wer"), ("retry_text", "wer_retry")):
+            for source, suffix in (("text", ""), ("retry_text", "_retry")):
                 if source == "text" or source in asr:
                     if not isinstance(asr.get(source), str) or (source == "retry_text" and "asr_retry" not in policy["scorers"]):
                         raise OpError("ASR text and a registered retry scorer are required")
-                    values[dest] = word_error(texts[item["id"]], asr[source], policy["normalization"])
+                    for name, score in (("wer", word_error), ("cer", character_error)):
+                        if name in policy["metrics"]:
+                            values[name + suffix] = score(texts[item["id"]], asr[source], policy["normalization"])
         if "naturalness" in item:
             if "naturalness" not in policy["metrics"]:
                 raise OpError("unregistered naturalness metric")

@@ -80,6 +80,9 @@ def _source_compatibility(a, b, policy):
 def _metric_check(name, policy, observations, keys):
     """Pair on fixtures, retaining all rounds within each resampled fixture."""
     spec = policy["metrics"][name]
+    asr_metric = name in qa.ASR_METRICS
+    denominator = "words" if name == "wer" else "characters"
+    retry_name = f"{name}_retry"
     totals = {"baseline": {}, "candidate": {}}
     missing, outliers, retry_missing = [], [], []
     retry_totals = {"baseline": {}, "candidate": {}}
@@ -93,29 +96,29 @@ def _metric_check(name, policy, observations, keys):
             if set(left) != set(right) or len(left) < spec["min_raters"]:
                 missing.append(f"{fid}/r{round_index}: paired listener panel")
                 continue
-        outlier = name == "wer" and any(v[name]["wer"] > spec["outlier_wer"] for v in pair.values())
+        outlier = asr_metric and any(v[name][name] > spec[f"outlier_{name}"] for v in pair.values())
         if outlier:
             outliers.append(f"{fid}/r{round_index}")
-            if any("wer_retry" not in v for v in pair.values()):
+            if any(retry_name not in v for v in pair.values()):
                 retry_missing.append(f"{fid}/r{round_index}")
         for arm, values in pair.items():
             value = values[name]
-            amount, count = (value["errors"], value["words"]) if name == "wer" else (
+            amount, count = (value["errors"], value[denominator]) if asr_metric else (
                 sum(value.values()) / len(value), 1) if name == "listening" else (value, 1)
             old = totals[arm].get(fid, (0, 0))
             totals[arm][fid] = (old[0] + amount, old[1] + count)
-            if name == "wer":
-                retry = values.get("wer_retry") if outlier else value
+            if asr_metric:
+                retry = values.get(retry_name) if outlier else value
                 if retry is not None:
                     old = retry_totals[arm].get(fid, (0, 0))
-                    retry_totals[arm][fid] = (old[0] + retry["errors"], old[1] + retry["words"])
+                    retry_totals[arm][fid] = (old[0] + retry["errors"], old[1] + retry[denominator])
     ids = sorted(set(totals["baseline"]) & set(totals["candidate"]))
     def score(values):
         baseline = [values["baseline"][i] for i in ids]
         candidate = [values["candidate"][i] for i in ids]
         result = qm.paired_delta_ci(candidate, baseline, policy["resamples"], policy["seed"])
         lo, hi = result["ci95"]
-        if name != "wer":
+        if not asr_metric:
             lo, hi = (-hi if hi is not None else None), (-lo if lo is not None else None)
         verdict, reason = qm.margin_verdict(lo, hi, spec["margin"])
         return {**result, "baseline": qm.pooled(baseline), "candidate": qm.pooled(candidate),
@@ -123,6 +126,8 @@ def _metric_check(name, policy, observations, keys):
     result = score(totals)
     result.update(margin=spec["margin"], missing=missing, outliers=outliers,
                   method="paired fixture-cluster bootstrap; all rounds retained per fixture")
+    if name == "cer":
+        result["normalization"] = {"name": policy["normalization"], "unit": "unicode_code_point", "whitespace": "removed"}
     if missing or len(ids) < policy["min_fixtures"]:
         # A sufficiently complete observed regression remains a regression. Otherwise no omitted cases may PASS.
         if result["verdict"] != "FAIL":
@@ -224,9 +229,9 @@ def quality_audio(call, baseline, candidate, fixtures, protocol, scores, run_dir
             missing.append(f"complete {name} observations")
         if result["verdict"] == "UNPROVEN":
             missing.append(f"conclusive {name} evidence")
-        metric_rows += [ev.metric(f"audio_{name}", result[arm], "fraction" if name == "wer" else "score", "pooled",
+        metric_rows += [ev.metric(f"audio_{name}", result[arm], "fraction" if name in qa.ASR_METRICS else "score", "pooled",
                                   n=result["n_prompts"], subject=arm) for arm in ("baseline", "candidate")]
-        metric_rows.append(ev.metric(f"audio_{name}_delta", result["delta"], "fraction" if name == "wer" else "score",
+        metric_rows.append(ev.metric(f"audio_{name}_delta", result["delta"], "fraction" if name in qa.ASR_METRICS else "score",
                                     "candidate_minus_baseline", n=result["n_prompts"], ci95=result["ci95"],
                                     subject=b["data"]["label"]))
     required = [structural, checks["registration"]["verdict"], "PASS" if enough and not missing else "UNPROVEN"]
@@ -243,7 +248,7 @@ def quality_audio(call, baseline, candidate, fixtures, protocol, scores, run_dir
                    "Paired CIs resample fixtures, retaining all rounds; listening inference is conditional on the supplied listener panel.",
                    "Quality does not prove fresh-process lifecycle, timing, memory fit or sustained reliability."]
     if policy["acceptance"] == "task_noninferiority":
-        limitations.append("WER, predicted MOS and speaker scores are proxies; human perceptual quality remains UNPROVEN.")
+        limitations.append("ASR error rates, predicted MOS and speaker scores are proxies; human perceptual quality remains UNPROVEN.")
     data = {"format": qa.RESULT_FORMAT, "source": "quality audio", "label": b["data"]["label"],
             "baseline": a["evidence_id"], "candidate": b["evidence_id"], "protocol": registered["evidence_id"],
             "policy": policy, "fixture_sha256": fixture_sha, "preregistered": preregistered,

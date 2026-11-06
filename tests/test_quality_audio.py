@@ -24,9 +24,10 @@ def invoke(name, **kwargs):
     return operation.handler(Call(operation, args), **args)
 
 
-def fixture_file(tmp_path, n=3, reference=False):
+def fixture_file(tmp_path, n=3, reference=False, texts=None):
     path = tmp_path / "fixtures.jsonl"
-    rows = [{"id": f"f{i}", "text": "The meeting starts tomorrow morning.", "unseen": True} for i in range(n)]
+    texts = texts if texts is not None else ["The meeting starts tomorrow morning."] * n
+    rows = [{"id": f"f{i}", "text": text, "unseen": True} for i, text in enumerate(texts)]
     if reference:
         (tmp_path / "voice.wav").write_bytes(b"synthetic voice reference")
         for row in rows:
@@ -43,10 +44,11 @@ def scorer(name):
     return value
 
 
-def policy_file(tmp_path, acceptance="exact", retry=False, listening=False, speaker=False):
+def policy_file(tmp_path, acceptance="exact", retry=False, listening=False, speaker=False, text_metrics=("wer",)):
     doc = {"acceptance": acceptance, "resamples": 100}
     if acceptance != "exact":
-        doc.update(metrics={"wer": {"margin": 0.02, "outlier_wer": 1}, "naturalness": {"margin": 0.1}},
+        doc.update(metrics={**{name: {"margin": 0.02, f"outlier_{name}": 1} for name in text_metrics},
+                            "naturalness": {"margin": 0.1}},
                    scorers={"asr": scorer("asr"), "naturalness": scorer("naturalness")})
         if retry:
             doc["scorers"]["asr_retry"] = scorer("asr_retry")
@@ -101,9 +103,10 @@ def bench(store, fixtures, label, *, different=False, frames=16, rounds=2, keep=
         return store.save(rec, staging)
 
 
-def setup_run(tmp_path, store, acceptance="exact", *, retry=False, listening=False, reference=False, **candidate_args):
-    fixtures = fixture_file(tmp_path, reference=reference)
-    protocol = invoke("quality_audio_policy", policy=str(policy_file(tmp_path, acceptance, retry, listening, reference)),
+def setup_run(tmp_path, store, acceptance="exact", *, retry=False, listening=False, reference=False,
+              text_metrics=("wer",), texts=None, **candidate_args):
+    fixtures = fixture_file(tmp_path, reference=reference, texts=texts)
+    protocol = invoke("quality_audio_policy", policy=str(policy_file(tmp_path, acceptance, retry, listening, reference, text_metrics)),
                       fixtures=str(fixtures))
     baseline = bench(store, fixtures, "baseline")
     candidate = bench(store, fixtures, "candidate", **candidate_args)
@@ -160,6 +163,145 @@ def test_wer_is_recomputed_not_capped_or_silently_normalized():
     assert qa.word_error("a b c", "a x", "whitespace_v1")["errors"] == 2
     with pytest.raises(OpError, match="no words"):
         qa.word_error("!!!", "speech", "nfkc_casefold_punctuation_v1")
+
+
+@pytest.mark.parametrize("reference,hypothesis,count", [
+    ("你好世界", "你好世间", 4),
+    ("こんにちは", "こんにちわ", 5),
+    ("แมว", "แม", 3),
+    ("سلام", "سلا", 4),
+    ("कि", "क", 2),  # A remaining combining mark counts as a code point, not a grapheme.
+])
+def test_cer_uses_unicode_code_points_without_word_boundaries(reference, hypothesis, count):
+    result = qa.character_error(reference, hypothesis, "nfkc_casefold_punctuation_v1")
+    assert result == {"errors": 1, "characters": count, "cer": 1 / count,
+                      "hypothesis_characters": len(hypothesis)}
+
+
+def test_cer_normalization_whitespace_punctuation_and_uncapped_insertions():
+    normalized = qa.character_error("ＣＡＦＥ\u0301，Straße!", "café strasse", "nfkc_casefold_punctuation_v1")
+    assert normalized["cer"] == 0
+    assert normalized["characters"] == 11
+    assert qa.character_error(" A\tB\u00a0C\n", "ABC", "whitespace_v1")["cer"] == 0
+    assert qa.character_error("a!", "A", "whitespace_v1")["errors"] == 2
+    assert qa.character_error("é", "e\u0301", "whitespace_v1")["cer"] == 2
+    assert qa.character_error("你", "你好世界", "whitespace_v1")["cer"] == 3
+    assert qa.character_error("你好", "", "whitespace_v1")["cer"] == 1
+    with pytest.raises(OpError, match="no characters"):
+        qa.character_error("！\t", "你好", "nfkc_casefold_punctuation_v1")
+
+
+@pytest.mark.parametrize("text_metrics", [("cer",), ("wer", "cer")])
+def test_cer_policy_and_report_preserve_independent_fixture_clustered_metrics(tmp_path, store, text_metrics):
+    run = setup_run(tmp_path, store, "task_noninferiority", text_metrics=text_metrics,
+                    texts=["你好", "你好世界", "今天阳光灿烂"])
+    path = score_file(tmp_path, store, run)
+    good = quality(run, path)
+    assert good["data"]["verdict"] == "PASS"
+    assert build_report([good], "improved", "quality")["verdict"] == "PASS"
+    assert set(good["data"]["scorer_provenance"]) == {"asr", "naturalness"}
+    check = good["data"]["checks"]["cer"]
+    assert check["normalization"] == {"name": "nfkc_casefold_punctuation_v1", "unit": "unicode_code_point",
+                                       "whitespace": "removed"}
+    assert check["n_prompts"] == 3
+    assert check["ci95"] == [0.0, 0.0]
+    assert all(m["unit"] == "fraction" for m in good["metrics"] if m["name"].startswith("audio_cer"))
+
+    doc = json.loads(path.read_text())
+    for row in doc["rows"]:
+        if row["arm"] == "candidate" and row["round"] == 0:
+            row["asr"]["text"] = row["asr"]["text"][:-1] + "错"
+    path.write_text(json.dumps(doc))
+    bad = quality(run, path)
+    check = bad["data"]["checks"]["cer"]
+    expected = op.qm.paired_delta_ci([(1, 4), (1, 8), (1, 12)], [(0, 4), (0, 8), (0, 12)], 100, 0)
+    assert check["candidate"] == pytest.approx(3 / 24)
+    assert check["baseline"] == 0
+    assert check["n_prompts"] == 3
+    assert check["ci95"] == list(expected["ci95"])
+    assert check["worse_ci95"] == check["ci95"]  # Higher error is worse.
+    assert bad["data"]["verdict"] == "FAIL"
+    assert build_report([bad], "improved", "quality")["verdict"] == "FAIL"
+    if "wer" in text_metrics:
+        assert bad["data"]["checks"]["wer"]["candidate"] == 0.5
+
+
+@pytest.mark.parametrize("failure", ["missing_row", "failed_asr", "all_asr_failed", "empty_transcript"])
+def test_cer_incomplete_and_failed_observations_never_become_zero_or_pass(tmp_path, store, failure):
+    run = setup_run(tmp_path, store, "task_noninferiority", text_metrics=("cer",))
+    path = score_file(tmp_path, store, run)
+    doc = json.loads(path.read_text())
+    if failure == "missing_row":
+        doc["rows"].pop()
+    else:
+        rows = doc["rows"] if failure in ("all_asr_failed", "empty_transcript") else doc["rows"][-1:]
+        for row in rows:
+            if failure == "empty_transcript":
+                if row["arm"] == "candidate":
+                    row["asr"]["text"] = ""
+            else:
+                del row["asr"]
+                row["error"] = "ASR failed"
+    path.write_text(json.dumps(doc))
+    result = quality(run, path)
+    expected = "FAIL" if failure == "empty_transcript" else "UNPROVEN"
+    assert result["data"]["checks"]["cer"]["verdict"] == expected
+    assert result["data"]["verdict"] == expected
+    assert build_report([result], "improved", "quality")["verdict"] == expected
+    if failure == "all_asr_failed":
+        assert result["data"]["checks"]["cer"]["candidate"] is None
+        assert all(m["value"] is None for m in result["metrics"] if m["name"].startswith("audio_cer"))
+    elif failure == "empty_transcript":
+        assert result["data"]["checks"]["cer"]["candidate"] == 1
+
+
+def test_cer_and_wer_outliers_are_corroborated_independently_without_selecting_best(tmp_path, store):
+    run = setup_run(tmp_path, store, "task_noninferiority", text_metrics=("wer", "cer"), retry=True)
+    hallucination = "错" * 200  # One word: WER stays below its outlier threshold; CER does not.
+    path = score_file(tmp_path, store, run, candidate_text=hallucination)
+    result = quality(run, path)
+    assert not result["data"]["checks"]["wer"]["outliers"]
+    assert result["data"]["checks"]["wer"]["verdict"] == "FAIL"
+    cer = result["data"]["checks"]["cer"]
+    assert cer["primary_verdict"] == "FAIL"
+    assert cer["verdict"] == "UNPROVEN"
+    assert len(cer["retry_missing"]) == 6
+    assert cer["candidate"] > 1
+    primary = cer["candidate"]
+
+    path = score_file(tmp_path, store, run, candidate_text=hallucination,
+                      retry_text="The meeting starts tomorrow morning.")
+    result = quality(run, path)
+    cer = result["data"]["checks"]["cer"]
+    assert cer["candidate"] == primary
+    assert cer["retry"]["candidate"] == 0
+    assert cer["verdict"] == "UNPROVEN"
+    assert "retry" not in result["data"]["checks"]["wer"]
+
+    path = score_file(tmp_path, store, run, candidate_text=hallucination, retry_text=hallucination)
+    assert quality(run, path)["data"]["checks"]["cer"]["verdict"] == "FAIL"
+
+
+@pytest.mark.parametrize("mutation", ["missing_asr", "missing_task_metric", "missing_naturalness",
+                                       "missing_outlier", "zero_outlier", "negative_margin", "wrong_outlier"])
+def test_cer_requires_registered_task_margin_outliers_and_asr(tmp_path, mutation):
+    doc = json.loads(policy_file(tmp_path, "task_noninferiority", text_metrics=("cer",)).read_text())
+    if mutation == "missing_asr":
+        del doc["scorers"]["asr"]
+    elif mutation == "missing_task_metric":
+        del doc["metrics"]["cer"]
+    elif mutation == "missing_naturalness":
+        del doc["metrics"]["naturalness"]
+    elif mutation == "missing_outlier":
+        del doc["metrics"]["cer"]["outlier_cer"]
+    elif mutation == "zero_outlier":
+        doc["metrics"]["cer"]["outlier_cer"] = 0
+    elif mutation == "negative_margin":
+        doc["metrics"]["cer"]["margin"] = -0.1
+    else:
+        doc["metrics"]["cer"]["outlier_wer"] = doc["metrics"]["cer"].pop("outlier_cer")
+    with pytest.raises(OpError):
+        qa.validate_policy(doc)
 
 
 def test_exact_preservation_and_changed_pcm_fail(tmp_path, store):

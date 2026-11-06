@@ -1,13 +1,13 @@
 # Speech quality evidence
 
-`quality audio` compares the complete PCM saved by `bench audio` against a named baseline. It produces `quality_audio` evidence for reports. The core uses only CPU arithmetic and imported observations; it does not install, download or run ASR, MOS or speaker models.
+`quality audio` compares the complete PCM saved by `bench audio` against a named baseline. It produces `quality_audio` evidence for reports. It uses CPU arithmetic and imported observations. Generate those observations with the optional [local speech scorers](audio-scorers.md), or import your own pinned scorer outputs.
 
 The acceptance policy is explicit:
 
 | Policy | Required evidence | Meaning of PASS |
 |---|---|---|
 | `exact` | Identical PCM, frame counts, rate and channels | Preservation of the named baseline outputs |
-| `task_noninferiority` | Paired WER and predicted naturalness; optional speaker metric | Noninferiority under the registered task/proxy metrics |
+| `task_noninferiority` | Paired WER/CER and predicted naturalness; optional speaker metric | Noninferiority under the registered task/proxy metrics |
 | `perceptual_and_task_noninferiority` | Task metrics plus blinded, paired listening ratings | Noninferiority under the registered task and listening protocol |
 
 A baseline's intrinsic intelligibility or suitability is not established by preserving it. Predicted MOS, ASR and speaker scores do not substitute for listening. Timing, lifecycle, memory and sustained reliability remain separate requirements.
@@ -99,13 +99,15 @@ inferencekit quality audio --baseline BASELINE_ID --candidate CANDIDATE_ID \
 
 WER is recomputed as word edit distance divided by reference words, without a cap. `nfkc_casefold_punctuation_v1` applies Unicode NFKC, case folding, punctuation-to-space and whitespace splitting; `whitespace_v1` only splits whitespace. Neither expands numbers or supplies language-specific tokenization. Choose a suitable declared protocol for the fixture language; empty normalized references are rejected.
 
+CER uses character edit distance divided by reference characters. Add `"cer": {"margin": 0.01, "outlier_cer": 1.0}` under `metrics`, alongside WER or instead of it. Both reuse the same ASR transcript. CER applies the chosen normalization and removes whitespace; its units are Unicode code points, not grapheme clusters. This permits character scoring for languages without whitespace-delimited words. Margins are fractions, and insertions can make either error rate exceed 1.
+
 Naturalness windows use original PCM frame coordinates, must be contiguous and cover the whole output exactly once, including the final short window. Scores are weighted by window duration within an utterance. The same method and preprocessing apply to both arms. Scorer provenance is an attestation by the importer: hashes establish binding and reproducibility inputs, not that the external model or listening study was honestly run.
 
 ## ASR outliers
 
-Register `wer.outlier_wer` before decoding. When either arm exceeds it, the affected pair needs a corroborating decode of both arms. Register an `asr_retry` descriptor with VAD enabled and `condition_on_previous_text: false`; supply each retry as `asr.retry_text`. Retain both transcripts. The policy does not choose whichever transcript has lower WER.
+Register `wer.outlier_wer` or `cer.outlier_cer` for each requested error rate before decoding. When either arm exceeds its threshold, the affected pair needs a corroborating decode of both arms. Register an `asr_retry` descriptor with VAD enabled and `condition_on_previous_text: false`; supply each retry as `asr.retry_text`. Retain both transcripts. The policy does not choose whichever transcript has the lower error rate.
 
-The paired primary result remains visible. The corroborating result substitutes both affected arms for a second calculation; disagreement between verdicts, or a missing corroborating decode, makes the WER check UNPROVEN. A corroborated regression remains FAIL. High waveform SNR never waives WER. Structural failures and failures of other required quality checks remain FAIL regardless of ASR uncertainty.
+The paired primary result remains visible. The corroborating result substitutes both affected arms for a second calculation; disagreement between verdicts, or a missing corroborating decode, makes that error-rate check UNPROVEN. WER and CER handle outliers independently. A corroborated regression remains FAIL. High waveform SNR never waives task checks. Structural failures and failures of other required quality checks remain FAIL regardless of ASR uncertainty.
 
 ## Listening and speaker scores
 
@@ -115,9 +117,9 @@ Speaker similarity is optional. Register `metrics.speaker.margin` and a scorer w
 
 ## Statistics and reports
 
-The paired bootstrap resamples fixtures, retaining all rounds within each drawn fixture. WER pools edit and reference-word counts; naturalness, speaker and listening scores average per-utterance values. Listening inference is conditional on the supplied listener panel. The CI is not a power guarantee: register an adequate fixture count for the intended margin.
+The paired bootstrap resamples fixtures, retaining all rounds within each drawn fixture. WER/CER pool edit counts and reference-word/character counts respectively; naturalness, speaker and listening scores average per-utterance values. Listening inference is conditional on the supplied listener panel. The CI is not a power guarantee: register an adequate fixture count for the intended margin.
 
-For WER the worse-direction difference is candidate minus baseline; for larger-is-better scores it is baseline minus candidate. PASS requires the entire CI inside the registered degradation margin; FAIL requires the entire CI above it; a straddling CI is UNPROVEN. Incomplete coverage or fewer than the registered fixture/round counts cannot PASS. Exact policy also requires bit-identical PCM for every pair; non-exact policies retain parity as diagnostics.
+For WER/CER the worse-direction difference is candidate minus baseline; for larger-is-better scores it is baseline minus candidate. PASS requires the entire CI inside the registered degradation margin; FAIL requires the entire CI above it; a straddling CI is UNPROVEN. Incomplete coverage or fewer than the registered fixture/round counts cannot PASS. Exact policy also requires bit-identical PCM for every pair; non-exact policies retain parity as diagnostics.
 
 SNR is `10*log10(sum(baseline²)/sum((baseline-candidate)²))`; maxabs is the largest signed-sample difference divided by 32768. Both use unmodified, aligned PCM. Unequal lengths have no SNR/maxabs value. Identical PCM has `snr_status: "identical"` and a null numeric SNR, avoiding a fabricated finite or nonfinite JSON value.
 

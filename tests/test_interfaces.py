@@ -27,6 +27,7 @@ CONTRACT_TOOLS |= {"bench_image", "bench_audio"}  # client-timed image and speec
 CONTRACT_TOOLS |= {"gates_clip", "quality_clip", "quality_clip_steps"}  # video (gates, quality, per-step)
 CONTRACT_TOOLS |= {"capture_rocprof", "analyze_rocprof"}  # AMD profiling
 CONTRACT_TOOLS |= {"cpu_screen_manifest", "quality_audio_policy", "quality_audio"}
+CONTRACT_TOOLS |= {"quality_audio_scorers", "quality_audio_score"}
 
 
 def test_registry_matches_contract_tool_names():

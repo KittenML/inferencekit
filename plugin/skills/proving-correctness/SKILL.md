@@ -30,7 +30,7 @@ Read the run's [quality choice](../optimizing-inference/references/starting-ques
 
 Use modality-appropriate structural integrity and task quality: text accuracy/distributions, image semantics/readability, speech content/completion/speaker, video temporal consistency. Other tasks need a registered adapter; do not substitute GSM8K or token identity. Missing listening/viewing remains UNPROVEN. The text procedures below apply only where their inputs and claims match.
 
-For TTS, register the acceptance policy before capture with `quality audio-policy`, then run `quality audio` on the final configuration records and saved PCM. It checks parity and imports hash-bound ASR/MOS/listening observations under the registered margins; [speech quality protocol](https://github.com/KittenML/inferencekit/blob/main/docs/audio-quality.md). It does not run the scorer models or replace required listening with a MOS predictor.
+For TTS, register the acceptance policy before capture with `quality audio-policy`, then run `quality audio` on final configuration records and saved PCM ([protocol](https://github.com/KittenML/inferencekit/blob/main/docs/audio-quality.md)). For changed outputs, `quality audio-scorers` pins local models and `quality audio-score` produces ASR/naturalness/voice observations ([setup](https://github.com/KittenML/inferencekit/blob/main/docs/audio-scorers.md)). Score after timing; WER/CER and MOS predictors do not replace required listening.
 
 ## Which rule applies (decide before measuring)
 
