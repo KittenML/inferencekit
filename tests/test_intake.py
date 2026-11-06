@@ -54,6 +54,59 @@ def test_defaults_are_filled_and_precision_rule_is_equal_precision():
     assert r["derived"]["claim_class"] == "derived" and r["derived"]["modes"] == ["single"]
 
 
+@pytest.mark.parametrize("modality", ["tts", "stt", "image", "video"])
+def test_media_has_no_llm_token_or_prompt_defaults(modality):
+    result = intake.check(base(modality=modality))
+    assert "max_tokens" not in result["intake"]["workload"]
+    assert "prompt_set" not in result["intake"]["workload"]
+    legacy = intake.check(base(modality=modality, workload={"max_tokens": 1}))
+    assert legacy["intake"]["workload"]["max_tokens"] == 1
+    assert any("unused" in w for w in legacy["warnings"])
+
+
+def test_llm_still_rejects_one_output_token_in_schema_and_validator():
+    data = base(workload={"max_tokens": 1})
+    assert not jsonschema.Draft202012Validator(intake.load_schema()).is_valid(data)
+    with pytest.raises(OpError, match="max_tokens"):
+        intake.check(data)
+
+
+def test_tts_workload_preserves_pins_and_recognizes_audio_client():
+    speech = {"voice": "speaker-a", "sample_rate": 24000, "lead_metric": "first_audio_ms",
+              "text_length_buckets": [{"name": "short", "min_chars": 1, "max_chars": 80},
+                                     {"name": "long", "min_chars": 81, "max_chars": 800}]}
+    result = intake.check(base(modality="tts", workload={"client": "bench_audio", "tts": speech},
+                               io_modes={"output": "complete"}, goals={"targets": {"rtf": 0.5}}))
+    assert result["intake"]["workload"]["tts"] == speech
+    assert result["intake"]["io_modes"]["output"] == "complete"
+    assert result["intake"]["buckets"] == ["short", "long"]
+    assert result["derived"]["modes"] == ["audio"]
+    assert not any("no audio timing client" in w for w in result["warnings"])
+    assert any("quality" in w and "UNPROVEN" in w for w in result["warnings"])
+    again = intake.check(result["intake"])
+    assert again["intake"] == result["intake"] and again["derived"] == result["derived"]
+
+
+@pytest.mark.parametrize("workload", [
+    {"client": "bench_serve"}, {"tts": {"sample_rate": 0}},
+    {"tts": {"lead_metric": "decode_tok_s"}},
+    {"tts": {"text_length_buckets": [{"name": "short", "min_chars": 20, "max_chars": 2}]}},
+    {"tts": {"text_length_buckets": [{"name": "short", "min_chars": 1, "max_chars": 2}] * 2}},
+])
+def test_bad_tts_workload_is_rejected(workload):
+    with pytest.raises(OpError):
+        intake.check(base(modality="tts", workload=workload))
+
+
+def test_audio_client_does_not_claim_stt_support_or_allow_tts_fields_for_llm():
+    with pytest.raises(OpError, match="does not support modality stt"):
+        intake.check(base(modality="stt", workload={"client": "bench_audio"}))
+    with pytest.raises(OpError, match="only to modality tts"):
+        intake.check(base(workload={"tts": {"voice": "speaker"}}))
+    external = intake.check(base(modality="stt", workload={"client": "external"}))
+    assert not any("no audio timing client" in w for w in external["warnings"])
+
+
 def test_no_target_interactive_means_the_stop_point_asks():
     r = intake.check(base())
     stop = r["derived"]["stop_rule"]

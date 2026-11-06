@@ -31,6 +31,10 @@ No plan or plan approval is required by default. Show or create one only when re
 
 ## Start or resume
 
+Existing run: first call `inferencekit intake resume runs/<run-id>`; inspect files for reported issues or required details ([state.md](references/state.md)).
+
+Fresh run:
+
 ```bash
 inferencekit intake template > intake.yaml   # only when no intake was supplied
 inferencekit intake validate intake.yaml --allow-placeholders
@@ -39,7 +43,7 @@ export INFERENCEKIT_RUNS_DIR="$PWD/runs/<run-id>/evidence"
 inferencekit intake budget runs/<run-id>
 ```
 
-Use the derived run id; `--run-dir` starts the clock and pins the intake. Resume from [state.md](references/state.md). With SSH, runtime and client run on the device host ([remote-host.md](references/remote-host.md)).
+Use the derived run id; `--run-dir` pins the intake and starts the clock. SSH runtime and client share the [device host](references/remote-host.md).
 
 ## 1. Define the actual task
 
@@ -59,7 +63,7 @@ Estimate critical-path share, attainable efficiency, exact byte savings and perm
 
 ## 3. Establish the strongest baseline
 
-Use [candidates.md](references/candidates.md) and the research queue. Launch compatible engines in isolated environments; record versions, commands, resolved configs and smoke results. Text engines, image pipelines, speech runtimes and video pipelines have different candidates. NVIDIA graphs are not a generic launch flag for AMD or Apple.
+Search the web at the start of each run for current engines and recipes for the exact model, hardware and goal; refresh when these or the runtime change. [candidates.md](references/candidates.md) gives examples, not a fixed list or count. Launch compatible engines in isolated environments; record sources, versions, commands, resolved configs and smoke results. NVIDIA graphs are not a generic launch flag for AMD or Apple.
 
 [Tune](references/tuning.md) supported engines for the goal. A task-fixed baseline is labelled fixed, never automatically best in the field. Reconsider numerical-only baseline rejects under a newly authorized lossy policy.
 

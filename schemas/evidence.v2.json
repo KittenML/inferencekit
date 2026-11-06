@@ -51,6 +51,7 @@
         "clip_steps",
         "image_benchmark",
         "audio_benchmark",
+        "quality_audio",
         "rocprof_capture",
         "rocprof_summary"
       ]
@@ -77,6 +78,17 @@
         "workload"
       ],
       "properties": {
+        "cpu": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "model": {"type": ["string", "null"]},
+            "architecture": {"type": ["string", "null"]},
+            "logical_cores": {"type": ["integer", "null"], "minimum": 1},
+            "physical_cores": {"type": ["integer", "null"], "minimum": 1},
+            "allowed_cpus": {"type": ["array", "null"], "items": {"type": "integer", "minimum": 0}, "uniqueItems": true},
+            "topology_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
+          }
+        },
         "gpu": {
           "type": "object",
           "additionalProperties": false,

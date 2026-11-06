@@ -29,6 +29,8 @@ KIND = "audio_benchmark"
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+-]{0,63}$")
 ARGS = [
     Arg("base_url", "string", "Speech server root; stored only as a keyed endpoint tag.", required=True, sensitive=True),
+    Arg("endpoint_id", "string", "Stable server identity for --extend across port changes. Set the same ID from "
+        "the first round; model, engine version and all configuration checks still apply."),
     Arg("model", "string", "Pinned model identifier sent to the server.", required=True),
     Arg("model_revision", "string", "Checkpoint revision, sent and required in final effective settings."),
     Arg("model_dtype", "string", "Checkpoint dtype, sent as dtype and checked in effective settings."),
@@ -45,6 +47,8 @@ ARGS = [
     Arg("api_key_env", "string", "Environment variable containing the key; never a key value."),
     Arg("engine_version", "string", "Pinned engine version, sent and checked in effective settings."),
     Arg("hardware_name", "string", "Measured hardware label; never inferred from a remote client."),
+    Arg("device", "string", "Whether the named server hardware is a GPU or CPU.", default="gpu", choices=("gpu", "cpu")),
+    Arg("gpu_count", "integer", "Number of GPUs serving audio (GPU mode only).", default=1),
     Arg("run_dir", "string", "Also copy request/output artifacts and metrics here."),
     Arg("timeout_s", "number", "Whole-response deadline including DNS, connect, headers and streamed body.", default=300.0),
     Arg("resamples", "integer", "Round-cluster bootstrap resamples.", default=stats.DEFAULT_RESAMPLES),
@@ -175,11 +179,17 @@ def _previous(store, reference, config_sha, call):
         raise OpError("--extend requires a bench audio record")
     if ev.integrity_problem(record):
         raise OpError("--extend evidence integrity check failed")
+    if record.get("data", {}).get("scheduler_final"):
+        raise OpError("--extend cannot append to a finalized scheduler record; start a new bench rounds run")
     if record["data"].get("configuration_sha256") != config_sha:
         raise OpError("--extend requires the same workload, model, version, hardware and seed policy")
     old_args = record["data"].get("request", {}).get("args", {})
-    if old_args.get("base_url") != call.request()["args"].get("base_url"):
-        raise OpError("--extend requires the same endpoint")
+    new_args = call.request()["args"]
+    if old_args.get("endpoint_id") != new_args.get("endpoint_id"):
+        raise OpError("--extend requires the same endpoint-id, set from the first round")
+    if not new_args.get("endpoint_id") and old_args.get("base_url") != new_args.get("base_url"):
+        raise OpError("--extend endpoint changed (including its port); use a fixed port per label or set "
+                      "--endpoint-id consistently from the first round. Endpoint addresses are kept private.")
     artifact = next((a for a in record["artifacts"] if a.get("role") == "requests"), None)
     if artifact is None:
         raise OpError("--extend per-request artifact missing")
@@ -201,13 +211,19 @@ def _previous(store, reference, config_sha, call):
            "first-audio p95, complete audio, RTF and buffer underruns. Audio quality remains UNPROVEN.", ARGS)
 def bench_audio(call, base_url, model, model_revision, model_dtype, model_quant, fixtures, label, rounds, first_round, warmup, seed_base, sample_rate,
                 channels, settings, api_key_env, engine_version, hardware_name, run_dir, timeout_s,
-                resamples, save_outputs, slo_first_audio_p95_ms, slo_rtf, extend):
+                resamples, save_outputs, slo_first_audio_p95_ms, slo_rtf, extend, endpoint_id=None, device="gpu", gpu_count=1):
     if rounds < 1 or (first_round is not None and first_round < 0) or warmup < 0 or resamples < 1:
         raise OpError("rounds/resamples must be positive; first_round/warmup nonnegative")
     if not _ID.fullmatch(label):
         raise OpError("invalid audio label")
+    if endpoint_id is not None and not _ID.fullmatch(endpoint_id):
+        raise OpError("endpoint-id must contain 1-64 filename-safe characters")
     if not model.strip():
         raise OpError("audio model identifier must be nonempty")
+    if not 1 <= gpu_count <= 1024 or device == "cpu" and gpu_count != 1:
+        raise OpError("gpu_count must be 1..1024; do not set it for a CPU server")
+    if device == "cpu" and not (hardware_name or "").strip():
+        raise OpError("CPU audio requires --hardware-name identifying the server CPU")
     if not 8000 <= sample_rate <= 192000 or not 1 <= channels <= 8:
         raise OpError("PCM rate must be 8000..192000 Hz and channels 1..8")
     if any(not math.isfinite(v) or v <= 0 for v in (timeout_s, slo_first_audio_p95_ms, slo_rtf)):
@@ -247,6 +263,8 @@ def bench_audio(call, base_url, model, model_revision, model_dtype, model_quant,
                        "seed_policy": {"name": "per_round", "base": seed_base}}
     request_sha = _sha(canonical_json(workload_config).encode())
     config_sha = _sha(canonical_json({**workload_config, "label": label, "hardware": hardware_name,
+                                    **({"device": "cpu"} if device == "cpu" else {}),
+                                    **({"gpu_count": gpu_count} if gpu_count != 1 else {}),
                                     "engine_version": engine_version, "effective_settings": setting_doc,
                                     "save_outputs": save_outputs,
                                     "slo_first_audio_p95_ms": slo_first_audio_p95_ms, "slo_rtf": slo_rtf}).encode())
@@ -303,7 +321,8 @@ def bench_audio(call, base_url, model, model_revision, model_dtype, model_quant,
                     if result.ok and save_outputs == "all":
                         rel = f"outputs/{label}/r{round_index}/{fixture.id}.pcm"
                         _write(roots, rel, result.pcm)
-                        outputs.append({"path": rel, "sha256": row["pcm_sha256"], "bytes": row["pcm_bytes"],
+                        outputs.append({"id": fixture.id, "round": round_index,
+                                        "path": rel, "sha256": row["pcm_sha256"], "bytes": row["pcm_bytes"],
                                         "sample_rate": sample_rate, "channels": channels, "encoding": ENCODING})
                 valid = [row for row in current_rows if row["ok"]]
                 round_rows.append({"index": round_index, "t_start": start, "t_end": time.time(), "seed": seed,
@@ -318,7 +337,8 @@ def bench_audio(call, base_url, model, model_revision, model_dtype, model_quant,
                 table["rtf"]["max"] > slo_rtf or any(row["underruns"] for row in rows if row["ok"]) else "PASS"
             verdict = stats.combine_claims([structure, timing, "UNPROVEN"])
             data = {"source": "bench audio", "timer": "client perf_counter_ns", "label": label,
-                    "endpoint_kind": "audio_http", "base_url_kind": "local" if endpoint.is_local() else "remote",
+                    "endpoint_kind": "audio_http", "endpoint_id": endpoint_id,
+                    "base_url_kind": "local" if endpoint.is_local() else "remote",
                     "fixture_set": {"sha256": fixture_sha, "fixtures": [f.identity() for f in fixture_rows]},
                     "configuration_sha256": config_sha, "extends": previous["evidence_id"] if previous else None,
                     "rounds": round_rows, "warmup": {"excluded": True, "requests": warm_rows},
@@ -365,7 +385,9 @@ def bench_audio(call, base_url, model, model_revision, model_dtype, model_quant,
                          ev.artifact(staging / f"outputs/{label}/index.json", staging, "outputs_index")]
             for output in outputs:
                 artifacts.append(ev.artifact(staging / output["path"], staging, "audio_pcm"))
-            identity = ev.identity(gpu={"name": hardware_name}, engine={"name": label, "version": engine_version},
+            identity = ev.identity(gpu={"name": hardware_name, "count": gpu_count} if device == "gpu" else None,
+                                   cpu={"model": hardware_name} if device == "cpu" else None,
+                                   engine={"name": label, "version": engine_version},
                                    model={"id": model, "revision": model_revision, "dtype": model_dtype, "quant": model_quant},
                                    workload={"mode": "single", "batch": 1, "endpoint_kind": "audio_http",
                                    "request_set": {"sha256": request_sha, "n": len(fixture_rows)},

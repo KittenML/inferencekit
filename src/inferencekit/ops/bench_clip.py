@@ -74,6 +74,7 @@ from inferencekit import evidence as ev
 from inferencekit import prompts as sets
 from inferencekit import stats
 from inferencekit.canonical import canonical_json, file_sha256
+from inferencekit.cpuinfo import cpu_identity
 from inferencekit.gpuinfo import gpu_identity
 from inferencekit.ops.bench_serve import _record_call
 from inferencekit.registry import Arg, OpError, operation
@@ -623,6 +624,8 @@ def bench_clip(call, base_url, clips, endpoint_kind, label, model, rounds, first
         ep = Endpoint.parse(base_url, api_key_from_env(api_key_env))
     except ValueError as e:
         raise OpError(str(e)) from None
+    if ep.is_local() and os.environ.get("INFERENCEKIT_CPU_LOCK_HELD") and (gpu_name or gpu_count != 1):
+        raise OpError("CPU rounds cannot use --gpu-name or a non-default --gpu-count")
     rcall, key_persistent = _record_call(call, ep)
     store = ev.Store()
     prev, prev_rows = (None, [])
@@ -762,14 +765,18 @@ def _record(*, rcall, store, staging, run, backend, ep, clipset, order, rounds, 
                 "seed_policy": policy, "seeds": [round_seeds[r] for r in sorted(round_seeds)], "audio": audio,
                 "request_set": request_set(clipset, policy, seeds),
                 **{k: clipset.uniform(k) for k in SHAPE_KEYS}}
-    if gpu_name:
+    cpu = cpu_identity() if ep.is_local() and os.environ.get("INFERENCEKIT_CPU_LOCK_HELD") else None
+    if cpu is not None:
+        gpu = {}
+    elif gpu_name:
         gpu = {"name": gpu_name, "count": gpu_count}
     elif ep.is_local():
         gpu = {**(gpu_identity() or {}), "count": gpu_count}
     else:
         gpu = {"count": gpu_count}
-    gpu_missing = [] if gpu.get("name") else ["gpu identity (remote engine or no nvidia-smi: pass --gpu-name)"]
-    ident = ev.identity(gpu=gpu, engine={"name": label, "version": engine_version}, model={"id": model},
+    gpu_missing = (["cpu identity"] if not cpu.get("model") else []) if cpu is not None else \
+        ([] if gpu.get("name") else ["gpu identity (remote engine or no nvidia-smi: pass --gpu-name)"])
+    ident = ev.identity(gpu=gpu, cpu=cpu, engine={"name": label, "version": engine_version}, model={"id": model},
                         workload=workload)
     a = table["all"]
     cm, cph = a.get("clip_ms") or {}, a.get("clips_per_hour") or {}

@@ -48,6 +48,23 @@ def test_good_manifest_is_valid_without_warnings():
     assert res == {"valid": True, "errors": [], "warnings": []}
 
 
+def test_cpu_manifest_has_explicit_identity_without_gpu_label():
+    m = good_manifest()
+    m["hardware"] = {"backend": "cpu", "count": 1, "cpu": {"model": "Fixture CPU", "architecture": "x86_64"}}
+    assert mf.check_manifest(m)["valid"]
+    m["hardware"]["gpu"] = "pretend GPU"
+    assert not mf.check_manifest(m)["valid"]
+    m["hardware"].pop("gpu")
+    m["hardware"].pop("cpu")
+    assert not mf.check_manifest(m)["valid"]
+
+
+def test_unmarked_cpu_metadata_does_not_bypass_legacy_gpu_requirement():
+    m = good_manifest()
+    m["hardware"] = {"count": 1, "cpu": {"model": "Fixture CPU"}}
+    assert not mf.check_manifest(m)["valid"]
+
+
 def test_full_example_manifest_passes_the_schema():
     # A full example manifest, with placeholders filled.
     m = good_manifest()

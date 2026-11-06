@@ -64,7 +64,18 @@ The client reports first PCM arrival, first nonzero signal arrival, simulated no
 
 ## Comparisons and proof
 
-These commands do not restart engines. For a published comparison, an external driver must start each engine fresh per round, retain process/startup records and run balanced interleaved A/B rounds on an otherwise idle device. Run one round per invocation and append each engine’s record with `--extend EVIDENCE_ID`; continuation requires identical configuration and intact prior artifacts. Use the same fixture set, precision, generation settings and round seeds for both engines. Keep each engine's endpoint stable between restarts.
+Use `bench rounds` to launch each engine fresh per round, check readiness, warm up, measure and stop its process group in balanced order. Set manifest `workload.modes` to `["audio"]` or `["image"]`; `--mode auto` also recognizes modality and endpoint declarations. Engines use `audio_http` or `image_http` and default to `/health` readiness. Keep the same fixture set, precision, generation settings and round seeds for both engines.
+
+```bash
+inferencekit bench rounds --manifest manifest.json --prompts speech.jsonl --mode audio --rounds 4
+# Use the two final arm IDs from plan.audio_evidence_final for compare and quality audio.
+```
+
+The manifest supplies `model.id`, `model.revision`, `model.precision`, each engine's version/launch/environment/port, and `workload.quant` (`none` for unquantized). Audio also accepts `workload.sample_rate`, `channels`, `seed` and `settings`; image settings stay in each fixture. `--serve-args` can supply client timeouts and SLOs but cannot override the scheduler's identity, seeds or round indices. `--mode clip` uses the video client.
+
+For CPU servers, set `hardware` to `{"backend":"cpu","cpu":{"model":"Exact CPU model"},"count":1}`. The runner uses a CPU-exclusive advisory lock and records sampled process-group RSS, OS thread counts, affinity and selected runtime environment controls. Requested thread settings do not prove a runtime used that many workers. RSS is host RAM, may miss brief peaks and counts shared pages per process; it is not VRAM or swap. CPU load/capacity mode is not supported. Direct CPU media calls use `--device cpu --hardware-name 'Exact CPU model'`.
+
+Manual drivers can still use one `bench audio`/`bench image` round per invocation and `--extend EVIDENCE_ID`. Continuation requires identical configuration and intact artifacts. For audio ports that change on restart, set the same `--endpoint-id` from the first round; otherwise keep the endpoint fixed. Scheduler-final records are immutable; start a new scheduler run instead of extending them.
 
 ```bash
 inferencekit compare BASELINE_ID CANDIDATE_ID --metric image_ms
@@ -72,7 +83,9 @@ inferencekit compare BASELINE_ID CANDIDATE_ID --metric first_audio_p95_ms
 inferencekit report BASELINE_ID CANDIDATE_ID COMPARISON_ID --format md
 ```
 
-`compare` requires matching request hashes and pinned model identities, at least three complete matching pairs, interleaved non-overlapping timing windows, and no structural failures. Use at least four rounds for a balanced two-engine final run. The paired bootstrap CI measures timing only. Fresh-process lifecycle, memory fit, semantic quality and repeated-run reliability require separate evidence; the report preserves these as UNPROVEN and propagates failed speech SLOs. Quality gates must use the exact timed configuration and the pre-registered modality protocol. Cross-precision results are format trade-offs and require separate quality reporting.
+`compare` requires matching request hashes and pinned model identities, at least three complete matching pairs, interleaved non-overlapping timing windows, and no structural failures. Use at least four rounds for a balanced two-engine final run. Missing scheduled rounds prevent a conclusive comparison; manual chains can declare `--expected-rounds 4` to check missing tail rounds. Known memory measurements appear beside timing, with their method and coverage.
+
+The paired bootstrap CI measures timing only. Scheduler-final records can establish fresh-process lifecycle. Memory fit, semantic quality and sustained reliability need their own evidence; failed speech SLOs remain failures. Register speech acceptance before capture with `quality audio-policy`, then evaluate saved PCM using [`quality audio`](audio-quality.md). Cross-precision results remain format trade-offs requiring separate quality reporting.
 
 Keep output artifacts for quality evaluation (`--save-outputs all`, the default). Retain cold-start/compile timing, whole-device and process memory, pressure/swap, sustained long outputs, task quality and mechanism profiles separately. Do not infer a smaller-memory-device result from a run on larger hardware.
 

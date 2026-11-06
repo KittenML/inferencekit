@@ -10,6 +10,8 @@ Experienced inference engineers start from the workload, not the engine: prompt 
 
 ## Technical mapping (derive first; translate necessary questions into ordinary language)
 
+The token-length mapping below is for LLMs. For TTS, use [speech workload fields](intake.md): text character buckets, voice, sample rate, `io_modes.output` and the first-audio/RTF/completion lead metric. Do not invent a `max_tokens` value for audio, image or video.
+
 | # | Ask | Intake field | If unknown |
 |---|---|---|---|
 | 1 | **SLO:** the p90 or p95 time to first token (TTFT) and time per output token (TPOT) a user must get, and the failures allowed | `goals.slo.ttft_p95_ms`, `tpot_p95_ms`, `max_fail` | Interactive: ask. There is no default SLO. You may offer a starting point for a chat UI, e.g. p95 TTFT ≤ 1,000 ms and TPOT ≤ 50 ms (≥ 20 tok/s, faster than reading speed) (inferred). It is never the person's SLO until they say yes. |

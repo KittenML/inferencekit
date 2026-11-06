@@ -57,8 +57,9 @@ from pathlib import Path
 
 from inferencekit import evidence as ev
 from inferencekit import proc, stats
+from inferencekit.cpuinfo import cpu_identity
 from inferencekit.registry import OpError
-from inferencekit.serve import servers
+from inferencekit.serve import resources, round_evidence, servers
 
 SERVE_CMD_ENV = "INFERENCEKIT_BENCH_SERVE_CMD"
 STATUSES_OK = ("ok",)
@@ -542,6 +543,8 @@ def higher_is_better(metric: str) -> bool | None:
     latency (lower is better) although it mentions N*.
     """
     m = base_metric(metric)
+    if m in ("peak_rss_mib", "peak_vram_mib", "rtf"):
+        return False
     if any(k in m for k in ("usd", "cost", "fail", "error")):
         return False
     if any(k in m for k in ("ttft", "tpot", "itl", "e2e", "latency")) or m.endswith(("_ms", "_seconds")):
@@ -594,24 +597,30 @@ def run_cell(spec: dict, k: int, position: int, cfg: dict, prompts: dict) -> dic
         log_path.unlink()  # a rerun of the same round must not append to an old log
     env, env_info = servers.server_env(spec["env"])
     cell["env"] = env_info
+    cell["server_env"] = resources.runtime_env(env, cwd=spec.get("cwd"))
+    cpu = cfg.get("resource_mode") == "cpu"
     if servers.port_in_use(spec["host"], spec["port"]):
         cell.update(status="port_busy", detail=f"something already listens on {spec['host']}:{spec['port']}; "
                                                "refusing to benchmark it in place of the engine")
         cell["t_end"] = time.time()
         return cell
-    gpu_before = cfg["gpu_reader"]()
-    server = None
+    gpu_before = None if cpu else cfg["gpu_reader"]()
+    server = monitor = None
     try:
         try:
             server = servers.launch(spec["launch"], env, log_path, cwd=spec.get("cwd"))
         except OSError as e:
             cell.update(status="launch_failed", detail=str(e)[:300])
             return cell
+        if cpu:
+            monitor = resources.ProcessMonitor(server.pgid, env, cwd=spec.get("cwd")).start()
         ready = servers.wait_ready(server, base + spec["ready_check"], cfg["startup_timeout_s"], cfg["poll_s"])
         cell["ready"] = ready
         if ready["status"] != "ready":
             cell["status"] = "startup_timeout" if ready["status"] == "timeout" else "exited_early"
             return cell
+        if monitor is not None:
+            monitor.settled()
         model = servers.served_model(base)
         cell["served_model"] = model
         model = model or cfg.get("model_id")
@@ -640,12 +649,14 @@ def run_cell(spec: dict, k: int, position: int, cfg: dict, prompts: dict) -> dic
                                      "source": sched["source"] if shared else "this engine's own warm-up"}
         argv = serve_argv(cfg["serve_cmd"], ctx, cfg["serve_args"])
         child_env = dict(os.environ)
+        child_env.pop("INFERENCEKIT_GPU_LOCK_HELD" if cpu else "INFERENCEKIT_CPU_LOCK_HELD", None)
         # Same evidence store as this run; and tell a lock-aware client that the GPU lock is already held
         # (by this process) so it must not try to take it again.
         root = str(ev.default_root().resolve())
         # The child's record is read from its stdout (parse_serve_output): full JSON, never the terse view.
         child_env.update({"INFERKIT_RUNS_DIR": root, "INFERENCEKIT_RUNS_DIR": root,
-                          "INFERENCEKIT_GPU_LOCK_HELD": str(cfg.get("gpu_lock_path") or ""),
+                          "INFERENCEKIT_CPU_LOCK_HELD" if cpu else "INFERENCEKIT_GPU_LOCK_HELD":
+                              str(cfg.get("cpu_lock_path" if cpu else "gpu_lock_path") or ""),
                           "INFERENCEKIT_OUTPUT": "json"})
         t0 = time.monotonic()
         res = proc.run(argv, timeout=cfg["serve_timeout_s"], env=child_env)  # a timeout kills its process group
@@ -688,11 +699,16 @@ def run_cell(spec: dict, k: int, position: int, cfg: dict, prompts: dict) -> dic
         return cell
     finally:
         if server is not None:
-            cell["stop"] = servers.stop(server, cfg["stop_timeout_s"])
+            try:
+                cell["stop"] = servers.stop(server, cfg["stop_timeout_s"])
+            finally:
+                if monitor is not None:
+                    attach_resources(cell, monitor.stop())
             if not cell["stop"]["group_gone"] and cell["status"] == "ok":
                 cell["status"] = "stop_failed"
-            cell["gpu_memory"] = servers.wait_gpu_memory(gpu_before, cfg["gpu_mem_tolerance_mib"],
-                                                         cfg["gpu_mem_wait_s"], reader=cfg["gpu_reader"])
+            if not cpu:
+                cell["gpu_memory"] = servers.wait_gpu_memory(gpu_before, cfg["gpu_mem_tolerance_mib"],
+                                                             cfg["gpu_mem_wait_s"], reader=cfg["gpu_reader"])
             resolved = servers.parse_resolved_config(spec["kind"], log_path.read_text(errors="replace")
                                                      if log_path.exists() else "")
             rc_dir = run_dir / "resolved_config"
@@ -709,10 +725,46 @@ def run_cell(spec: dict, k: int, position: int, cfg: dict, prompts: dict) -> dic
         cell["t_end"] = time.time()
 
 
+def attach_resources(cell: dict, telemetry: dict) -> None:
+    """Keep the raw method/limitations and expose a per-round observed host-memory metric."""
+    cell["resources"] = telemetry
+    peak = telemetry.get("peak_rss_mib")
+    if peak is not None and telemetry.get("status") == "observed":
+        cell.setdefault("metrics", {}).setdefault("all", {})["peak_rss_mib"] = {
+            "value": peak, "unit": "MiB", "stat": "sampled_peak", "n": telemetry.get("samples")}
+
+
+def cleanup_failure(cell: dict) -> str | None:
+    """A failed cleanup invalidates the host for every later cell, not only this arm."""
+    stop, memory = cell.get("stop") or {}, cell.get("gpu_memory") or {}
+    if stop.get("group_gone") is False:
+        return "server processes survived cleanup"
+    if memory.get("checked") is True and memory.get("returned") is not True:
+        return "GPU memory did not return to its pre-launch level"
+    return None
+
+
+def skipped_cleanup_cell(spec: dict, k: int, position: int, halted: dict) -> dict:
+    now = time.time()
+    return {"round": k, "position": position, "label": spec["label"], "kind": spec["kind"],
+            "status": "skipped_after_cleanup_failure", "t_start": now, "t_end": now,
+            "detail": f"cleanup failed after {halted['label']} r{halted['round']}: {halted['detail']}"}
+
+
+def finalized_evidence(last_ev: dict, cells: list[dict], plan: dict) -> dict:
+    """Custom clients may print a record without storing it; retain that limitation explicitly."""
+    store = ev.Store()
+    stored = {label: ref for label, ref in last_ev.items() if (store.run_dir(ref) / "evidence.json").is_file()}
+    absent = sorted(set(last_ev) - set(stored))
+    if absent:
+        plan["unfinalized_evidence"] = absent
+    return {**last_ev, **round_evidence.finalize_arm_records(stored, cells, plan, cpu=plan.get("cpu"))}
+
+
 # --------------------------------------------------------------------------- summary
 
 def summarize(cells: list[dict], labels: list[str], resamples: int = stats.DEFAULT_RESAMPLES,
-              seed: int = 0, mode: str = "single") -> dict:
+              seed: int = 0, mode: str = "single", expected_rounds: int | None = None) -> dict:
     """Medians over rounds with bootstrap CIs, and ratios to the best engine with paired CIs.
 
     An engine with any failed request in a bucket (over all its rounds) is not eligible as
@@ -723,6 +775,9 @@ def summarize(cells: list[dict], labels: list[str], resamples: int = stats.DEFAU
     values: dict[tuple[str, str, str], dict[int, float]] = {}
     units: dict[str, str | None] = {}
     requests: dict[tuple[str, str], float] = {}
+    expected = set(range(1, expected_rounds + 1)) if expected_rounds is not None else {c["round"] for c in cells}
+    completed = {label: {c["round"] for c in cells if c["label"] == label and c.get("status") in STATUSES_OK}
+                 for label in labels}
     for c in cells:
         if c.get("status") not in STATUSES_OK:
             continue
@@ -747,7 +802,8 @@ def summarize(cells: list[dict], labels: list[str], resamples: int = stats.DEFAU
             per[label] = {"median": statistics.median(xs), "ci95": list(ci), "n": len(xs), "by_round": v}
         if not per:
             continue
-        eligible = [lb for lb in per if not failures.get((lb, bucket))]
+        eligible = [lb for lb in per if not failures.get((lb, bucket)) and
+                    set(per[lb]["by_round"]) == expected and completed[lb] == expected]
         best = None
         if direction is not None and eligible:
             pick = max if direction else min
@@ -758,11 +814,16 @@ def summarize(cells: list[dict], labels: list[str], resamples: int = stats.DEFAU
                    "higher_is_better": direction, "median": info["median"], "ci95": info["ci95"], "n": info["n"],
                    "best": best, "ratio_to_best": None, "ratio_ci95": [None, None], "n_pairs": 0,
                    "failed_requests": failed}
+            absent = sorted(expected - set(info["by_round"]))
+            row["missing_rounds"] = absent
             if name in COUNT_METRICS:
                 row["total"] = sum(info["by_round"].values())
             if failed and direction is not None:
                 row["excluded_from_best"] = (f"{failed:g} failed request(s) over {info['n']} round(s): latencies "
                                              "cover only the answered requests")
+            elif (absent or completed[label] != expected) and direction is not None:
+                row["excluded_from_best"] = ("incomplete successful rounds: missing "
+                                             f"{absent or sorted(expected - completed[label])}")
             elif best is not None:
                 b, c = per[best]["by_round"], info["by_round"]
                 paired = sorted(set(b) & set(c))
@@ -782,12 +843,16 @@ def summarize(cells: list[dict], labels: list[str], resamples: int = stats.DEFAU
     else:
         median_def = ("median over rounds of the per-round value (median over that round's requests in the "
                       "bucket, from bench serve's requests artifact) (observed)")
-    return {"rows": rows, "failures": fail_list, "definitions": {
+    return {"rows": rows, "failures": fail_list,
+            "incomplete_rounds": [{"engine": label, "missing_rounds": sorted(expected - completed[label])}
+                                  for label in labels if completed[label] != expected], "definitions": {
         "median": median_def,
+        "peak_rss_mib": "median over rounds of sampled peak server-process-group RSS (host RAM, observed); "
+                        "sampling can miss peaks and shared pages can be counted per process",
         "ci95": f"bootstrap 95% CI of that median, rounds resampled ({'derived' if mode == 'load' else 'observed'})",
         "ratio_to_best": "median(engine) / median(best engine) over rounds both completed, with a paired "
                          "bootstrap 95% CI resampling rounds (derived); best = lowest for latencies, highest "
-                         "for rates, among engines with no failed request in the bucket",
+                         "for rates, among engines with complete successful rounds and no failed request in the bucket",
         "failed_requests": "requests that failed in a round (median over rounds; 'total' sums them); an engine "
                            "with any failure in a bucket is never best there and gets no ratio"}}
 
@@ -907,6 +972,9 @@ def markdown(summary: dict, plan: dict, cells: list[dict], resolved: dict) -> st
                   f"Arrival schedule: {same}{ref}; {sched.get('source') or 'unknown'}.", ""]
     else:
         lines += ["Medians and CIs are [observed] (client-side timer in `bench serve`); ratios are [derived].", ""]
+    if any(r["metric"] == "peak_rss_mib" for r in summary["rows"]):
+        lines += ["peak_rss_mib is observed host RAM from server-process-group samples across launch, requests and "
+                  "cleanup; sampling can miss peaks and count shared pages per process. It is not client timing or VRAM.", ""]
     lines += ["An engine marked [FAILURES] had failed requests in that bucket: its latencies cover only the "
               "requests it answered, so it is never named best there and gets no ratio.", "",
               f"| engine | bucket | metric | median [{cls}] | 95% CI | rounds | ratio to best [derived] | "
@@ -927,6 +995,12 @@ def markdown(summary: dict, plan: dict, cells: list[dict], resolved: dict) -> st
                      f"{ratio_ci} |")
     if not summary["rows"]:
         lines.append("| (no successful rounds) | | | | | | | |")
+    if summary.get("incomplete_rounds"):
+        lines += ["", "## Incomplete rounds", "",
+                  "These engines retain their observed values but are excluded from ranking.", "",
+                  "| engine | missing successful rounds |", "|---|---|"]
+        for item in summary["incomplete_rounds"]:
+            lines.append(f"| {item['engine']} | {', '.join(map(str, item['missing_rounds']))} |")
     if summary.get("failures"):
         lines += ["", "## Failed requests", "", "| engine | bucket | failed | requests | rounds |",
                   "|---|---|---|---|---|"]
@@ -984,7 +1058,8 @@ def run_rounds(manifest_path: str, prompts_path: str, rounds: int | None, mode: 
                gpu_mem_tolerance_mib: int = 512, gpu_mem_wait_s: float = 60, poll_s: float = 0.5,
                gpu_reader=None, ref_e2e_ms: float | None = None, chat_template_kwargs: str | dict | None = None,
                ci_target: float | None = None, min_rounds: int | None = None,
-               extra_body: str | dict | None = None) -> dict:
+               extra_body: str | dict | None = None, resource_mode: str = "gpu",
+               cpu_lock_path: str | None = None) -> dict:
     """Run every (round, engine) cell under the GPU lock; return plan, cells, summary and paths.
 
     ``rounds`` None: the smallest multiple of the Williams period that is at least 3.
@@ -998,6 +1073,9 @@ def run_rounds(manifest_path: str, prompts_path: str, rounds: int | None, mode: 
     if mode not in ("single", "load"):
         raise OpError("mode must be 'single' or 'load'")
     manifest = load_manifest(manifest_path)
+    resource_mode = round_evidence.resource_mode(manifest, resource_mode)
+    if resource_mode == "cpu" and mode == "load":
+        raise OpError("CPU load mode is not supported: capacity metrics currently use GPU normalization; use --mode single")
     specs = engine_specs(manifest, engines)
     if not specs:
         raise OpError("no engines selected")
@@ -1042,6 +1120,9 @@ def run_rounds(manifest_path: str, prompts_path: str, rounds: int | None, mode: 
                          "serve_args": serve_args, "serve_cmd_custom": bool(serve_cmd or os.environ.get(SERVE_CMD_ENV)),
                          "warmup_kind": servers.WARMUP_KIND},
             "manifest_sha256": hashlib.sha256(Path(manifest_path).read_bytes()).hexdigest()}
+    plan["resource_mode"] = resource_mode
+    if resource_mode == "cpu":
+        plan["cpu"] = cpu_identity()
     if mode == "load":
         plan["load_schedule"] = schedule
     plan["chat_template_kwargs"] = {"value": ctk or None, "source": ctk_source}
@@ -1060,21 +1141,35 @@ def run_rounds(manifest_path: str, prompts_path: str, rounds: int | None, mode: 
            "model_id": (manifest.get("model") or {}).get("id"), "last_ev": {},
            "ref_e2e_ms": ref_e2e_ms, "schedule": schedule, "chat_template_kwargs": ctk or None,
            "extra_body": body or None}
+    cfg["resource_mode"] = resource_mode
     out_dir = rdir / "rounds"
     out_dir.mkdir(parents=True, exist_ok=True)
     cells: list[dict] = []
-    with servers.gpu_lock(gpu_lock_path, owner=f"inferencekit bench rounds {rdir.name}") as lock:
-        plan["gpu_lock"] = lock["path"]
-        cfg["gpu_lock_path"] = lock["path"]
+    lock_context = (servers.gpu_lock(cpu_lock_path, owner=f"inferencekit bench rounds {rdir.name}", resource="CPU")
+                    if resource_mode == "cpu" else
+                    servers.gpu_lock(gpu_lock_path, owner=f"inferencekit bench rounds {rdir.name}"))
+    with lock_context as lock:
+        plan[f"{resource_mode}_lock"] = lock["path"]
+        cfg[f"{resource_mode}_lock_path"] = lock["path"]
         plan["started"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         (out_dir / "plan.json").write_text(json.dumps(ev.redact(plan), indent=2) + "\n")
         by_label = {s["label"]: s for s in specs}
+        halted = None
         for k, order in enumerate(design["orders"], 1):
             for pos, label in enumerate(order):
-                cell = run_cell(by_label[label], k, pos, cfg, prompts)
+                cell = (skipped_cleanup_cell(by_label[label], k, pos, halted) if halted else
+                        run_cell(by_label[label], k, pos, cfg, prompts))
+                failure = cleanup_failure(cell)
+                if failure:
+                    halted = {"label": label, "round": k, "detail": failure}
+                    plan["aborted_after_cleanup_failure"] = halted
+                    cell["cleanup_failure"] = failure
+                    if cell.get("status") == "ok":
+                        cell["status"] = ("stop_failed" if (cell.get("stop") or {}).get("group_gone") is False else
+                                          "gpu_memory_not_released")
                 cells.append(cell)
                 (out_dir / f"{label}.r{k}.json").write_text(json.dumps(ev.redact(cell), indent=2) + "\n")
-            if adaptive is None:
+            if adaptive is None or halted:
                 continue
             whole = k % adaptive["period"] == 0 and k >= adaptive["first_check_round"]
             if whole or k == rounds:  # the last round is checked too, to record whether the target was met
@@ -1099,10 +1194,10 @@ def run_rounds(manifest_path: str, prompts_path: str, rounds: int | None, mode: 
             schedule["source"] = ("no reference latency reported by bench serve: each engine's concurrency levels "
                                   "were turned into rates with its own warm-up e2e")
         plan["load_schedule"] = schedule
+    plan["serve_evidence_final"] = finalized_evidence(cfg["last_ev"], cells, plan)
     (out_dir / "plan.json").write_text(json.dumps(ev.redact(plan), indent=2) + "\n")
-    summary = summarize(cells, labels, mode=mode)
+    summary = summarize(cells, labels, mode=mode, expected_rounds=plan["rounds"])
     resolved = resolved_summary(cells, labels)
-    plan["serve_evidence_final"] = dict(cfg["last_ev"])  # single mode: each engine's record with all its rounds
     (out_dir / "summary.json").write_text(json.dumps(ev.redact({"plan": plan, "summary": summary,
                                                                 "resolved_config": resolved}), indent=2) + "\n")
     md = markdown(summary, plan, cells, resolved)

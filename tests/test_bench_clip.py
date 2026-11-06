@@ -646,6 +646,30 @@ def test_comfyui_backends_plug_in_through_register_backend(mods, store, tmp_path
 
 # --------------------------------------------------------------------------- clip rounds
 
+
+@pytest.mark.parametrize("cleanup", [
+    {"stop": {"group_gone": False}, "status": "startup_timeout"},
+    {"stop": {"group_gone": True}, "gpu_memory": {"checked": True, "returned": False}, "status": "ok"},
+])
+def test_cleanup_failure_skips_every_remaining_clip_cell(mods, tmp_path, monkeypatch, cleanup):
+    clips = write_clips(tmp_path)
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"engines": [{"label": label, "name": "custom", "port": _free_port(),
+                                                 "launch": ["unused"]} for label in ("a", "b")]}))
+    launched = []
+
+    def fake_cell(spec, k, position, cfg):
+        launched.append(spec["label"])
+        return {"round": k, "position": position, "label": spec["label"], "kind": "generic", **cleanup}
+
+    monkeypatch.setattr(mods.cr, "run_clip_cell", fake_cell)
+    result = mods.cr.run_clip_rounds(str(manifest), str(clips), rounds=4, gpu_lock_path=str(tmp_path / "lock"))
+    assert launched == ["a"] and len(result["cells"]) == 8
+    assert all(c["status"] == "skipped_after_cleanup_failure" for c in result["cells"][1:])
+    assert result["plan"]["aborted_after_cleanup_failure"]["label"] == "a"
+    assert result["cells"][0]["status"] != "ok"
+    assert "Incomplete rounds" in result["markdown"]
+
 def test_clip_argv_default_and_template(mods):
     ctx = {"base_url": "http://127.0.0.1:9", "clips": "/c.jsonl", "label": "a", "round": 2, "first_round": 1,
            "run_dir": "/r", "endpoint_kind": "clip_http", "workflow": "", "engine_version": "1.0", "extend": "ev_x",
@@ -739,6 +763,38 @@ def test_clip_rounds_interleave_engines_with_shared_seeds(mods, store, tmp_path,
     cmp = registry.call("compare", {"baseline": a["evidence_id"], "candidate": b["evidence_id"], "metric": "clip_ms",
                                     "resamples": 200})
     assert cmp["data"]["interleaved"] is True and cmp["data"]["pairs"] == 2
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux process-group RSS")
+def test_clip_cpu_rounds_capture_process_memory_and_cpu_identity(mods, store, tmp_path, monkeypatch):
+    monkeypatch.setattr(mods.cr, "gpu_processes", lambda: pytest.fail("CPU scheduler probed GPU processes"))
+    monkeypatch.setattr(mods.cr, "gpu_identity", lambda: pytest.fail("CPU scheduler probed GPU identity"))
+    clips = write_clips(tmp_path)
+    run = tmp_path / "cpu-clips"
+    run.mkdir()
+    port = _free_port()
+    manifest = run / "manifest.json"
+    manifest.write_text(json.dumps({"manifest_version": 1, "model": {"id": "org/fake-video"},
+        "hardware": {"backend": "cpu"}, "engines": [{"name": "custom", "label": "cpu-video", "version": "0.0.1",
+        "env": {"OMP_NUM_THREADS": "2"}, "port": port, "launch": [sys.executable, THIS, "--serve", "--port",
+        str(port), "--label", "cpu-video"], "role": "custom"}]}))
+    # The child fails if its evidence builder attempts GPU discovery. Its timer still
+    # exercises the normal fake clip endpoint and the real bench-clip operation.
+    command = (f"{sys.executable} -c 'import inferencekit.ops.bench_clip as b; "
+               "b.gpu_identity=lambda: (_ for _ in ()).throw(AssertionError(\"GPU probe\")); "
+               "from inferencekit.cli import main; raise SystemExit(main())' bench clip")
+    rec = mods.cr.bench_rounds_clip(_call(), manifest=str(manifest), clips=str(clips), rounds=1,
+        resource_mode="cpu", cpu_lock_path=str(tmp_path / "cpu.lock"), startup_timeout_s=30, stop_timeout_s=3,
+        clip_cmd=command, clip_args="--resamples 100", gpu_reader=lambda: pytest.fail("CPU GPU-memory read"))
+    assert rec["identity"]["cpu"]["architecture"] and rec["identity"]["gpu"]["name"] is None
+    cell = rec["data"]["cells"][0]
+    assert cell["status"] == "ok", cell
+    assert cell["resources"]["peak_rss_mib"] > 0 and cell["stop"]["group_gone"]
+    final = store.load(rec["data"]["plan"]["clip_evidence_final"]["cpu-video"])
+    assert final["data"]["rounds"][0]["peak_rss_mib"] > 0
+    assert final["identity"]["cpu"] == rec["identity"]["cpu"]
+    assert not any("gpu identity" in item for item in final["coverage"]["missing"])
+    assert final["identity"]["engine"]["flags"]["server_env"]["controls"]["OMP_NUM_THREADS"] == "2"
 
 
 def test_bench_rounds_mode_clip_runs_clip_rounds_with_the_default_bench_clip(mods, store, tmp_path, monkeypatch):

@@ -53,6 +53,7 @@ KINDS = KINDS_V1 + ("serve_benchmark", "capacity", "gates", "quality_trajectory"
 KINDS += ("clip_benchmark", "clip_gates", "clip_quality", "clip_steps")
 # Client-timed images and speech. Structural validity never establishes semantic quality.
 KINDS += ("image_benchmark", "audio_benchmark", "rocprof_capture", "rocprof_summary")
+KINDS += ("quality_audio",)
 # identity.workload fields: the v1 four are always present (null when unknown); the v2 serving fields
 # are written only when the operation knows them.
 WORKLOAD_V1 = ("prompt_len", "gen_len", "batch", "seed")
@@ -90,7 +91,7 @@ def metric(name: str, value: float | int | None, unit: str, stat: str, n: int | 
 
 
 def identity(gpu: dict | None = None, engine: dict | None = None, model: dict | None = None,
-             workload: dict | None = None) -> dict:
+             workload: dict | None = None, cpu: dict | None = None) -> dict:
     """The four things a number depends on. Unknown fields are null, never guessed."""
     g = {"name": None, "count": None, "driver": None, "cuda": None, "clocks": None}
     e = {"name": None, "version": None, "commit": None, "flags": {}}
@@ -103,7 +104,11 @@ def identity(gpu: dict | None = None, engine: dict | None = None, model: dict | 
     for k in WORKLOAD_V2:  # serving workloads (v2): mode, concurrency grid, prompt set, SLO...
         if (workload or {}).get(k) is not None:
             w[k] = workload[k]
-    return {"gpu": g, "engine": e, "model": m, "workload": w}
+    result = {"gpu": g, "engine": e, "model": m, "workload": w}
+    if cpu is not None:
+        result["cpu"] = {k: cpu.get(k) for k in ("model", "architecture", "logical_cores", "physical_cores",
+                                               "allowed_cpus", "topology_sha256")}
+    return result
 
 
 def build(call: Call, *, kind: str, claim_class: str, summary: str, identity_: dict | None = None,
@@ -299,11 +304,14 @@ def validate(record: dict) -> list[str]:
     return errors
 
 
-def verify(record: dict) -> dict:
+def verify(record: dict, *, include_error_count: bool = False) -> dict:
     """Integrity check: does the id match the content, and does the record fit the schema?"""
     errors = validate(record)
-    return {"id_ok": compute_id(record) == record.get("evidence_id"), "schema_ok": not errors,
-            "schema_errors": errors[:20]}
+    result = {"id_ok": compute_id(record) == record.get("evidence_id"), "schema_ok": not errors,
+              "schema_errors": errors[:20]}
+    if include_error_count and errors:
+        result["schema_error_count"] = len(errors)
+    return result
 
 
 def integrity_problem(record: dict) -> str | None:

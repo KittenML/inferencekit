@@ -181,6 +181,19 @@ def test_gpu_lock_is_exclusive(tmp_path):
         pass
 
 
+def test_cpu_lock_uses_its_own_default_and_is_exclusive(tmp_path, monkeypatch):
+    cpu, gpu = tmp_path / "cpu.lock", tmp_path / "gpu.lock"
+    monkeypatch.setenv("INFERENCEKIT_CPU_LOCK", str(cpu))
+    monkeypatch.setenv("INFERENCEKIT_GPU_LOCK", str(gpu))
+    with servers.gpu_lock(None, "cpu-first", resource="CPU") as held:
+        assert held["path"] == str(cpu)
+        with pytest.raises(OpError, match="CPU lock"):
+            with servers.gpu_lock(None, "cpu-second", resource="CPU"):
+                pass
+        with servers.gpu_lock(None, "independent-gpu") as held_gpu:
+            assert held_gpu["path"] == str(gpu)
+
+
 def test_gpu_memory_wait_detects_a_leak():
     readings = iter([[9000], [5000], [1100]])
     ok = servers.wait_gpu_memory([1000], 256, 5, reader=lambda: next(readings))
@@ -443,7 +456,72 @@ def test_a_cell_whose_requests_all_failed_is_serve_failed():
     assert rr.cell_status(0, {"x": 1}, {})[0] == "serve_no_metrics"
 
 
+def test_missing_or_failed_cells_never_make_an_engine_best():
+    cells = [_rows_cell(label, k, 1 if label == "incomplete" else 100, 0)
+             for label in ("complete", "incomplete") for k in (1, 2)]
+    cells[-1] = {"label": "incomplete", "round": 2, "status": "startup_timeout"}
+    summary = rr.summarize(cells, ["complete", "incomplete"], resamples=100, expected_rounds=2)
+    row = next(r for r in summary["rows"] if r["engine"] == "incomplete" and r["metric"] == "ttft_ms")
+    assert row["median"] == 1 and row["best"] == "complete" and row["ratio_to_best"] is None
+    assert row["missing_rounds"] == [2] and "incomplete" in row["excluded_from_best"]
+    assert summary["incomplete_rounds"] == [{"engine": "incomplete", "missing_rounds": [2]}]
+    assert rr.higher_is_better("rtf") is False
+
+
+def test_cpu_load_is_refused_before_any_launch(tmp_path):
+    manifest, prompts = write_run(tmp_path, [fake_engine("a", free_port())])
+    with pytest.raises(OpError, match="CPU load mode.*single"):
+        rr.run_rounds(str(manifest), str(prompts), 2, "load", resource_mode="cpu")
+
+
+@pytest.mark.parametrize("cleanup", [
+    {"stop": {"group_gone": False}, "status": "startup_timeout"},
+    {"stop": {"group_gone": True}, "gpu_memory": {"checked": True, "returned": False}, "status": "ok"},
+])
+def test_cleanup_failure_skips_every_remaining_text_cell(tmp_path, monkeypatch, cleanup):
+    manifest, prompts = write_run(tmp_path, [fake_engine("a", free_port()), fake_engine("b", free_port())])
+    launched = []
+
+    def fake_cell(spec, k, position, cfg, prompts):
+        launched.append(spec["label"])
+        return {"round": k, "position": position, "label": spec["label"], "kind": "generic", **cleanup}
+
+    monkeypatch.setattr(rr, "run_cell", fake_cell)
+    result = rr.run_rounds(str(manifest), str(prompts), 4, "single", gpu_lock_path=str(tmp_path / "lock"))
+    assert launched == ["a"]
+    assert len(result["cells"]) == 8
+    assert all(c["status"] == "skipped_after_cleanup_failure" for c in result["cells"][1:])
+    assert result["plan"]["aborted_after_cleanup_failure"]["label"] == "a"
+    assert result["plan"]["rounds"] == 4
+    assert result["cells"][0]["status"] != "ok"
+    assert "Incomplete rounds" in result["markdown"]
+
+
 # --------------------------------------------------------------------------- end to end
+
+
+@linux_only
+def test_cpu_rounds_measure_server_group_without_gpu_probes(tmp_path, store, monkeypatch):
+    engines = [fake_engine("a", free_port(), "--ttft-ms", "5", env={"OMP_NUM_THREADS": "2"}),
+               fake_engine("b", free_port(), "--ttft-ms", "10", env={"OMP_NUM_THREADS": "4"})]
+    manifest, prompts = write_run(tmp_path, engines)
+    monkeypatch.setattr(rr, "cpu_identity", lambda: {"model": "Test CPU", "architecture": "test"})
+    result = rr.run_rounds(str(manifest), str(prompts), 2, "single", resource_mode="cpu",
+                           cpu_lock_path=str(tmp_path / "cpu.lock"), startup_timeout_s=20, stop_timeout_s=3,
+                           warmup=0, poll_s=.05, serve_cmd=f"{sys.executable} {STUB_SERVE}",
+                           gpu_reader=lambda: pytest.fail("CPU runs must not read GPU memory"))
+    assert result["plan"]["resource_mode"] == "cpu" and "gpu_lock" not in result["plan"]
+    assert result["plan"]["cpu"]["model"] == "Test CPU"
+    assert result["plan"]["unfinalized_evidence"] == ["a", "b"]  # deliberately unstored test-client records
+    for cell in result["cells"]:
+        assert cell["status"] == "ok" and cell["stop"]["group_gone"]
+        assert "gpu_memory" not in cell
+        assert cell["resources"]["peak_rss_mib"] > 0
+        assert cell["resources"]["peak_threads"] >= 1
+        assert cell["resources"]["observations"]["settled"]["processes"] >= 1
+        assert cell["server_env"]["controls"]["OMP_NUM_THREADS"] == ("2" if cell["label"] == "a" else "4")
+    memory = [r for r in result["summary"]["rows"] if r["metric"] == "peak_rss_mib"]
+    assert len(memory) == 2 and all(r["higher_is_better"] is False and r["n"] == 2 for r in memory)
 
 def test_end_to_end_two_engines_via_cli(tmp_path, capsys, monkeypatch):
     p_fast, p_slow = free_port(), free_port()

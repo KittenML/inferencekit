@@ -17,7 +17,7 @@ metadata:
 
 ## Route before capturing
 
-Read `doctor`'s `data.hardware.platform`/`data.profiling_route` and the relevant [hardware reference](../inference-triage/references/hardware.md). NVIDIA: nsys → ncu. AMD: rocprofv3 HIP/kernel/copy timeline → architecture-supported counters (Instinct support does not establish Radeon support). Apple: Instruments CPU/Metal → Xcode/MLX capture. CPU: platform profiler. nsys/ncu capture is NOT RUN elsewhere; profiling itself still applies.
+Read `doctor`'s `data.hardware.platform`/`data.profiling_route` and the relevant [hardware reference](../inference-triage/references/hardware.md). NVIDIA: nsys → ncu. AMD: rocprofv3 HIP/kernel/copy timeline → architecture-supported counters (Instinct support does not establish Radeon support). Apple: Instruments CPU/Metal → Xcode/MLX capture. CPU: [perf when permitted, otherwise engine timers or CPU-only torch.profiler](../inference-triage/references/cpu.md#profiling). nsys/ncu capture is NOT RUN elsewhere; profiling itself still applies.
 
 **Retrieve current official docs online** for unknown architectures, runtime/tool support, flags or errors before choosing a path; record URL/date/version and check local help. Use AMD ROCm, Apple Developer/MLX and NVIDIA primary sources. Retain timeline/op attribution when counters fail, marking unsupported checks NOT RUN. All platforms follow critical path → Amdahl → change → correctness → unprofiled interleaved A/B, with the same [environment hygiene](references/capture-hygiene.md). Include text encoding, image VAE, audio codec/vocoder and buffering where applicable.
 

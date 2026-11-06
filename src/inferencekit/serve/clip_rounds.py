@@ -42,7 +42,7 @@ from inferencekit.ops.doctor import gpu_processes
 from inferencekit.registry import OpError
 from inferencekit.serve import clip_client as cc
 from inferencekit.serve import rounds as rr
-from inferencekit.serve import servers
+from inferencekit.serve import resources, round_evidence, servers
 
 CLIP_CMD_ENV = "INFERENCEKIT_BENCH_CLIP_CMD"
 DIRECTIONS = {"clip_ms": False, "clips_per_hour": True}  # ranked here even where rr.higher_is_better cannot
@@ -138,35 +138,43 @@ def run_clip_cell(spec: dict, k: int, position: int, cfg: dict) -> dict:
         log_path.unlink()
     env, env_info = servers.server_env(spec["env"])
     cell["env"] = env_info
+    cell["server_env"] = resources.runtime_env(env, cwd=spec.get("cwd"))
+    cpu = cfg.get("resource_mode") == "cpu"
     if servers.port_in_use(spec["host"], spec["port"]):
         cell.update(status="port_busy", detail=f"something already listens on {spec['host']}:{spec['port']}; "
                                                "refusing to benchmark it in place of the engine")
         cell["t_end"] = time.time()
         return cell
-    gpu_before = cfg["gpu_reader"]()
-    server = None
+    gpu_before = None if cpu else cfg["gpu_reader"]()
+    server = monitor = None
     try:
         try:
             server = servers.launch(spec["launch"], env, log_path, cwd=spec.get("cwd"))
         except OSError as e:
             cell.update(status="launch_failed", detail=str(e)[:300])
             return cell
+        if cpu:
+            monitor = resources.ProcessMonitor(server.pgid, env, cwd=spec.get("cwd")).start()
         ready = servers.wait_ready(server, base + spec["ready_check"], cfg["startup_timeout_s"], cfg["poll_s"])
         cell["ready"] = ready
         if ready["status"] != "ready":
             cell["status"] = "startup_timeout" if ready["status"] == "timeout" else "exited_early"
             return cell
+        if monitor is not None:
+            monitor.settled()
         ctx = {"base_url": base, "clips": str(cfg["clips_path"]), "label": label, "round": k, "first_round": k - 1,
                "run_dir": str(run_dir), "endpoint_kind": spec["endpoint_kind"], "workflow": spec.get("workflow") or "",
                "engine_version": spec.get("version") or "", "extend": cfg["last_ev"].get(label) or "",
                "warmup": cfg["warmup"], "model": cfg.get("model_id") or ""}
         argv = clip_argv(cfg["clip_cmd"], ctx, cfg["clip_args"])
         child_env = dict(os.environ)
+        child_env.pop("INFERENCEKIT_GPU_LOCK_HELD" if cpu else "INFERENCEKIT_CPU_LOCK_HELD", None)
         # Same evidence store as this run, and the GPU lock is already held (by this process).
         root = str(ev.default_root().resolve())
         # The child's record is read from its stdout (parse_serve_output): full JSON, never the terse view.
         child_env.update({"INFERKIT_RUNS_DIR": root, "INFERENCEKIT_RUNS_DIR": root,
-                          "INFERENCEKIT_GPU_LOCK_HELD": str(cfg.get("gpu_lock_path") or ""),
+                          "INFERENCEKIT_CPU_LOCK_HELD" if cpu else "INFERENCEKIT_GPU_LOCK_HELD":
+                              str(cfg.get("cpu_lock_path" if cpu else "gpu_lock_path") or ""),
                           "INFERENCEKIT_OUTPUT": "json"})
         t0 = time.monotonic()
         res = proc.run(argv, timeout=cfg["clip_timeout_s"], env=child_env)  # a timeout kills its process group
@@ -191,19 +199,25 @@ def run_clip_cell(spec: dict, k: int, position: int, cfg: dict) -> dict:
         return cell
     finally:
         if server is not None:
-            cell["stop"] = servers.stop(server, cfg["stop_timeout_s"])
+            try:
+                cell["stop"] = servers.stop(server, cfg["stop_timeout_s"])
+            finally:
+                if monitor is not None:
+                    rr.attach_resources(cell, monitor.stop())
             if not cell["stop"]["group_gone"] and cell["status"] == "ok":
                 cell["status"] = "stop_failed"
-            cell["gpu_memory"] = servers.wait_gpu_memory(gpu_before, cfg["gpu_mem_tolerance_mib"],
-                                                         cfg["gpu_mem_wait_s"], reader=cfg["gpu_reader"])
+            if not cpu:
+                cell["gpu_memory"] = servers.wait_gpu_memory(gpu_before, cfg["gpu_mem_tolerance_mib"],
+                                                             cfg["gpu_mem_wait_s"], reader=cfg["gpu_reader"])
         cell["t_end"] = time.time()
 
 
 # --------------------------------------------------------------------------- summary
 
-def summarize(cells: list[dict], labels: list[str], resamples: int = stats.DEFAULT_RESAMPLES, seed: int = 0) -> dict:
+def summarize(cells: list[dict], labels: list[str], resamples: int = stats.DEFAULT_RESAMPLES, seed: int = 0,
+              expected_rounds: int | None = None) -> dict:
     """rr.summarize, with clips_per_hour ranked as a rate (rr.higher_is_better does not know '_per_hour')."""
-    out = rr.summarize(cells, labels, resamples=resamples, seed=seed, mode="single")
+    out = rr.summarize(cells, labels, resamples=resamples, seed=seed, mode="single", expected_rounds=expected_rounds)
     by_round: dict[tuple[str, str, str], dict[int, float]] = {}
     for c in cells:
         if c.get("status") in rr.STATUSES_OK:
@@ -215,13 +229,15 @@ def summarize(cells: list[dict], labels: list[str], resamples: int = stats.DEFAU
             continue  # the text runner ranks it already
         for bucket in sorted({r["bucket"] for r in out["rows"] if r["metric"] == name}):
             rows = [r for r in out["rows"] if r["metric"] == name and r["bucket"] == bucket]
-            eligible = [r for r in rows if not r["failed_requests"]]
+            eligible = [r for r in rows if not r["failed_requests"] and not r.get("excluded_from_best")]
             best = (max if higher else min)(eligible, key=lambda r: r["median"])["engine"] if eligible else None
             for r in rows:
                 r.update(higher_is_better=higher, best=best)
                 if r["failed_requests"]:
                     r["excluded_from_best"] = (f"{r['failed_requests']:g} failed clip(s) over {r['n']} round(s): "
                                                "its rate covers only the clips it returned")
+                    continue
+                if r.get("excluded_from_best"):
                     continue
                 if best is None:
                     continue
@@ -234,13 +250,15 @@ def summarize(cells: list[dict], labels: list[str], resamples: int = stats.DEFAU
                                                 seed=seed)
                     r.update(ratio_to_best=res["ratio"], ratio_ci95=list(res["ci95"]), n_pairs=res["n_pairs"])
     out["definitions"] = {
+        "peak_rss_mib": "median over rounds of sampled peak server-process-group RSS (host RAM, observed); "
+                        "sampling can miss peaks and shared pages can be counted per process",
         "median": "median over rounds of the per-round value (clip_ms: mean over that round's clips of the task, "
                   "or of every clip for 'all', from bench clip's requests artifact; client timer) (observed)",
         "clips_per_hour": "per round: 3,600,000 x clips / sum of their clip_ms, one clip at a time (derived)",
         "ci95": "bootstrap 95% CI of that median, rounds resampled",
         "ratio_to_best": "median(engine) / median(best engine) over rounds both completed, with a paired bootstrap "
                          "95% CI resampling rounds (derived); best = lowest clip_ms, highest clips_per_hour, among "
-                         "engines with no failed clip in the task",
+                         "engines with complete successful rounds and no failed clip in the task",
         "failed_requests": "clips that failed in a round; an engine with any failure in a task is never best there "
                            "and gets no ratio"}
     return out
@@ -272,6 +290,15 @@ def markdown(summary: dict, plan: dict, cells: list[dict]) -> str:
                      f"{ratio_ci} |")
     if not summary["rows"]:
         lines.append("| (no successful rounds) | | | | | | | |")
+    if any(r["metric"] == "peak_rss_mib" for r in summary["rows"]):
+        lines += ["", "peak_rss_mib is observed host RAM from server-process-group samples; sampling can miss peaks "
+                  "and count shared pages per process. It is not VRAM."]
+    if summary.get("incomplete_rounds"):
+        lines += ["", "## Incomplete rounds", "",
+                  "These engines retain their observed values but are excluded from ranking.", "",
+                  "| engine | missing successful rounds |", "|---|---|"]
+        for item in summary["incomplete_rounds"]:
+            lines.append(f"| {item['engine']} | {', '.join(map(str, item['missing_rounds']))} |")
     failed = [c for c in cells if c.get("status") != "ok"]
     if failed:
         lines += ["", "## Failed cells", "", "| round | engine | status | detail |", "|---|---|---|---|"]
@@ -287,9 +314,11 @@ def run_clip_rounds(manifest_path: str, clips_path: str, rounds: int | None = No
                     run_dir: str | None = None, gpu_lock_path: str | None = None, startup_timeout_s: float = 1800,
                     stop_timeout_s: float = 30, clip_timeout_s: float = 14400, warmup: int = 1,
                     clip_cmd: str | None = None, clip_args: str | None = None, gpu_mem_tolerance_mib: int = 512,
-                    gpu_mem_wait_s: float = 60, poll_s: float = 0.5, gpu_reader=None) -> dict:
+                    gpu_mem_wait_s: float = 60, poll_s: float = 0.5, gpu_reader=None,
+                    resource_mode: str = "gpu", cpu_lock_path: str | None = None) -> dict:
     """Run every (round, engine) clip cell under the GPU lock; return plan, cells, summary and paths."""
     manifest = rr.load_manifest(manifest_path)
+    resource_mode = round_evidence.resource_mode(manifest, resource_mode)
     specs = clip_specs(manifest, manifest_path, engines)
     if not specs:
         raise OpError("no engines selected")
@@ -316,28 +345,45 @@ def run_clip_rounds(manifest_path: str, clips_path: str, rounds: int | None = No
                                         "guidance, audio, image), all before the first timed clip, seeds outside "
                                         "the timed seed policy and prompts no timed clip has"},
             "manifest_sha256": file_sha256(Path(manifest_path))[0]}
+    plan["resource_mode"] = resource_mode
+    if resource_mode == "cpu":
+        plan["cpu"] = rr.cpu_identity()
     cfg = {"run_dir": rdir, "clips_path": Path(clips_path).resolve(), "startup_timeout_s": startup_timeout_s,
            "stop_timeout_s": stop_timeout_s, "clip_timeout_s": clip_timeout_s, "warmup": warmup, "clip_cmd": clip_cmd,
            "clip_args": clip_args, "gpu_mem_tolerance_mib": gpu_mem_tolerance_mib, "gpu_mem_wait_s": gpu_mem_wait_s,
            "poll_s": poll_s, "gpu_reader": gpu_reader or servers.gpu_memory_used_mib,
            "model_id": (manifest.get("model") or {}).get("id"), "last_ev": {}}
+    cfg["resource_mode"] = resource_mode
     out_dir = rdir / OUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     cells: list[dict] = []
-    with servers.gpu_lock(gpu_lock_path, owner=f"inferencekit bench rounds (clip) {rdir.name}") as lock:
-        plan["gpu_lock"] = lock["path"]
-        cfg["gpu_lock_path"] = lock["path"]
+    lock_context = (servers.gpu_lock(cpu_lock_path, owner=f"inferencekit bench rounds (clip) {rdir.name}", resource="CPU")
+                    if resource_mode == "cpu" else
+                    servers.gpu_lock(gpu_lock_path, owner=f"inferencekit bench rounds (clip) {rdir.name}"))
+    with lock_context as lock:
+        plan[f"{resource_mode}_lock"] = lock["path"]
+        cfg[f"{resource_mode}_lock_path"] = lock["path"]
         plan["started"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         (out_dir / "plan.json").write_text(json.dumps(ev.redact(plan), indent=2) + "\n")
         by_label = {s["label"]: s for s in specs}
+        halted = None
         for k, order in enumerate(design["orders"], 1):
             for pos, label in enumerate(order):
-                cell = run_clip_cell(by_label[label], k, pos, cfg)
+                cell = (rr.skipped_cleanup_cell(by_label[label], k, pos, halted) if halted else
+                        run_clip_cell(by_label[label], k, pos, cfg))
+                failure = rr.cleanup_failure(cell)
+                if failure:
+                    halted = {"label": label, "round": k, "detail": failure}
+                    plan["aborted_after_cleanup_failure"] = halted
+                    cell["cleanup_failure"] = failure
+                    if cell.get("status") == "ok":
+                        cell["status"] = ("stop_failed" if (cell.get("stop") or {}).get("group_gone") is False else
+                                          "gpu_memory_not_released")
                 cells.append(cell)
                 (out_dir / f"{label}.r{k}.json").write_text(json.dumps(ev.redact(cell), indent=2) + "\n")
         plan["ended"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-    summary = summarize(cells, labels)
-    plan["clip_evidence_final"] = dict(cfg["last_ev"])  # each engine's bench clip record with all its rounds
+    summary = summarize(cells, labels, expected_rounds=plan["rounds"])
+    plan["clip_evidence_final"] = rr.finalized_evidence(cfg["last_ev"], cells, plan)
     (out_dir / "plan.json").write_text(json.dumps(ev.redact(plan), indent=2) + "\n")
     (out_dir / "summary.json").write_text(json.dumps(ev.redact({"plan": plan, "summary": summary}), indent=2) + "\n")
     md = markdown(summary, plan, cells)
@@ -350,15 +396,17 @@ def bench_rounds_clip(call, *, manifest: str, clips: str, rounds: int | None = N
                       run_dir: str | None = None, gpu_lock: str | None = None, startup_timeout_s: float = 1800,
                       stop_timeout_s: float = 30, clip_timeout_s: float = 14400, warmup: int = 1,
                       clip_args: str | None = None, clip_cmd: str | None = None, gpu_mem_tolerance_mib: int = 512,
-                      gpu_reader=None) -> dict:
+                      gpu_reader=None, resource_mode: str = "gpu", cpu_lock_path: str | None = None) -> dict:
     """bench rounds in clip mode: run the rounds and store one ``clip_benchmark`` record (the summary)."""
     from inferencekit.ops.bench_rounds import _limitations  # the text runner's cell, order and failure notes
 
-    others = gpu_processes()
+    resource_mode = round_evidence.resource_mode(rr.load_manifest(manifest), resource_mode)
+    others = [] if resource_mode == "cpu" else gpu_processes()
     result = run_clip_rounds(manifest, clips, rounds, engines=engines, run_dir=run_dir, gpu_lock_path=gpu_lock,
                              startup_timeout_s=startup_timeout_s, stop_timeout_s=stop_timeout_s,
                              clip_timeout_s=clip_timeout_s, warmup=warmup, clip_cmd=clip_cmd, clip_args=clip_args,
-                             gpu_mem_tolerance_mib=gpu_mem_tolerance_mib, gpu_reader=gpu_reader)
+                             gpu_mem_tolerance_mib=gpu_mem_tolerance_mib, gpu_reader=gpu_reader,
+                             resource_mode=resource_mode, cpu_lock_path=cpu_lock_path)
     plan, summary, rdir, clipset = result["plan"], result["summary"], Path(result["run_dir"]), result["clipset"]
     labels = [e["label"] for e in plan["engines"]]
     limitations, missing = _limitations({**result, "resolved_config": {}})
@@ -390,7 +438,8 @@ def bench_rounds_clip(call, *, manifest: str, clips: str, rounds: int | None = N
                                      n=r["n_pairs"], ci95=r["ratio_ci95"], subject=subject))
     m = result["manifest"].get("model") or {}
     kinds = sorted({e["endpoint_kind"] for e in plan["engines"]})
-    ident = ev.identity(gpu=gpu_identity(), engine={"name": "+".join(labels), "flags": {"engines": labels}},
+    ident = ev.identity(gpu={} if resource_mode == "cpu" else gpu_identity(), cpu=plan.get("cpu"),
+                        engine={"name": "+".join(labels), "flags": {"engines": labels}},
                         model={"id": m.get("id"), "revision": m.get("revision"), "dtype": m.get("precision")},
                         workload={"mode": "single", "batch": 1, "endpoint_kind": "+".join(kinds),
                                   "clip_set": clipset.identity(),
@@ -406,10 +455,11 @@ def bench_rounds_clip(call, *, manifest: str, clips: str, rounds: int | None = N
                  for name, role in (("summary.md", "summary"), ("summary.json", "summary"), ("plan.json", "plan"))
                  if (rdir / OUT_DIR / name).is_file()]
     artifacts += [ev.artifact(rdir / c["log"], rdir, "server_log") for c in result["cells"]
-                  if (rdir / c["log"]).is_file()]
+                  if c.get("log") and (rdir / c["log"]).is_file()]
     cells = [{k: c.get(k) for k in ("round", "position", "label", "kind", "endpoint_kind", "status", "ready", "clip",
                                      "stop", "gpu_memory", "env", "log", "metrics_source", "claim_valid",
-                                     "violations", "cache_allowed_clips", "t_start", "t_end", "detail")}
+                                     "violations", "cache_allowed_clips", "t_start", "t_end", "detail", "resources",
+                                     "server_env")}
              for c in result["cells"]]
     record = ev.build(call, kind=bc.KIND, claim_class="observed", summary=line, identity_=ident, metrics=metrics,
                       artifacts=artifacts, missing=missing, limitations=limitations,

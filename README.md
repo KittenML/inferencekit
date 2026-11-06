@@ -25,7 +25,7 @@ inferencekit is a plugin for Claude Code, Codex and OpenCode, backed by reusable
 inferencekit gives your agent the playbook and the tools of a senior inference engineer. On every run it works the problem the same way.
 
 1. **Understand the task.** The agent first asks about your goal, deadline, budget and how much the results may change, reusing answers you already gave. It identifies the model, hardware and real inputs, then estimates memory, compute and launch costs per request. Text, image, audio and video use their own metrics and quality checks.
-2. **Find and tune an engine.** It researches current implementations, then tunes and benchmarks supported engines (vLLM, SGLang, llama.cpp, TensorRT-LLM and others) for your workload on your hardware. The fastest tested configuration that meets your quality requirements can be the result, or the tuned baseline for further work.
+2. **Find and tune an engine.** It searches the web for current engines and settings for your model and hardware, then tunes and benchmarks compatible options for your workload. Engines listed here, such as vLLM, SGLang, llama.cpp and TensorRT-LLM, are examples, not a fixed set. The fastest tested configuration that meets your quality requirements can be the result, or the tuned baseline for further work.
 3. **Find the bottleneck.** It selects the profiler for your hardware: Nsight on NVIDIA, ROCm tools on AMD, or Instruments and Metal on Apple. It measures the critical path and investigates memory, compute and launch costs, checking current vendor docs when support is uncertain.
 4. **Investigate and implement, if requested.** Search current code, papers, compiler docs and engineering talks; inspect dispatch, IR and assembly when useful. Choose graph execution, fusion, matrix kernels, packing, state reuse or other techniques from measured bottlenecks. Independent implementations can run in parallel; one coordinator integrates changes, and measurements stay serialized per device. Separate authorized devices may run concurrently.
 5. **Prove every step.** Every change gets a fast correctness check and a timed screen; milestones get the full proof: interleaved rounds against the tuned baseline, the anti-cheat gates and quality against a reference model. Changes that miss the agreed performance or quality requirements are reverted.
@@ -128,7 +128,7 @@ Each check ends PASS, FAIL, UNPROVEN (not enough evidence) or NOT RUN. A missing
 
 ## Features
 
-- **9 skills, 4 commands and 5 read-only subagents**, backed by [41 executable CLI/MCP operations](https://github.com/KittenML/inferencekit/tree/main/src/inferencekit/ops/).
+- **9 skills, 4 commands and 5 read-only subagents**, backed by [47 executable CLI/MCP operations](https://github.com/KittenML/inferencekit/tree/main/src/inferencekit/ops/).
 - **Reusable run tools:** [ikstep](https://github.com/KittenML/inferencekit/blob/main/plugin/skills/optimizing-inference/references/remote-host.md) manages jobs on local or remote Linux hosts, readiness checks and concise status output.
 - **Compact output:** CLI summaries and bounded MCP responses keep full evidence records on disk, with paging for large lists.
 - **Speed-of-light ceilings:** measured memory bandwidth (`ceiling bw`) and exact bytes per token read from the checkpoint's safetensors headers (`roofline`), including NVFP4, FP8 and mixture-of-experts models.

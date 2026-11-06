@@ -39,8 +39,9 @@ inferencekit intake validate intake.yaml --run-dir runs/<run-id> # start or resu
 | `goals.traffic` | — | `arrival_rate_rps` (the **peak**: stage 8 sizes replicas for it), `burstiness`, `session_len`. |
 | `goals.after_target` | `keep_climbing` when `non_interactive` or a budget is fixed; else `stop` | At the target, `keep_climbing` continues while headroom and budget remain ([stop-point.md](stop-point.md)); set it for benchmark and comparison runs too. |
 | `io_modes` | input `complete`, output `streaming` | Streaming input warns: engines without incremental input are NOT SUPPORTED for it; any emulation is labelled. |
-| `buckets` | all four | `very_short` 1–5 words, `short` ~20–50 tokens, `medium` ~300 tokens, `long` 2k–4k tokens. Choose them from the input-length p50 and p90 ([workload.md](workload.md)). |
-| `workload` | `max_tokens` 256, `rounds` 5, `prompt_set` `dev` | `max_tokens` from the output-length p50 (p90 for capacity when p90 > 2 × p50). `concurrency` defaults to `[1,2,4,8,16,32,64]` in load mode; it is a floor, extended until the SLO fails ([capacity.md](capacity.md)). |
+| `buckets` | all four; TTS declared text buckets when supplied | LLM: `very_short` 1–5 words, `short` ~20–50 tokens, `medium` ~300 tokens, `long` 2k–4k tokens. Choose them from the input-length p50 and p90 ([workload.md](workload.md)). TTS character bounds live in `workload.tts.text_length_buckets`. |
+| `workload` | `rounds` 5; LLM only: `max_tokens` 256, `prompt_set` `dev` | LLM `max_tokens` comes from the output-length p50 (p90 for capacity when p90 > 2 × p50); omit it for media. `concurrency` defaults to `[1,2,4,8,16,32,64]` in load mode; it is a floor, extended until the SLO fails ([capacity.md](capacity.md)). |
+| `workload.client`, `workload.tts` | unset | Timing client (`bench_audio` for TTS, `external` for another adapter); TTS voice, sample rate, character buckets and lead metric. `io_modes.output` selects streaming or complete utterance; see below. |
 | `budget` | `approved: false` | `gpu_hours` (host hours × count), `usd`, `wall_clock_h` (the deadline; see "Time budget" below). Reuse explicit session/intake authorization; no separate plan approval ([starting-questions.md](starting-questions.md)). |
 | `quality.reference` | `none` | `{kind: endpoint, base_url}` for a higher-precision reference server. With `none`, the reference is the baseline engine at the same precision. |
 | `quality.noise_floor` | `measure` | `measure` = an A/A run of the reference; or a fixed agreement floor in [0, 1]. |
@@ -63,8 +64,8 @@ inferencekit intake validate intake.yaml --run-dir runs/<run-id> # start or resu
 | `decode_ceiling_fraction` | higher | fraction | llm | decode tok/s ÷ ceiling tok/s at that bucket's context (derived; ceilings.md) |
 | `n_star` | higher | streams/GPU | not video | `bench serve` load mode, against `goals.slo` |
 | `usd_per_1m` | lower | $/1M units | not video | `price_usd_h` ÷ (units/s at the lead operating point × 3600) × 1e6 |
-| `ttfa_ms` | lower | ms | tts | a modality client (UNPROVEN without one) |
-| `rtf` | lower | × real time | tts, stt | a modality client (UNPROVEN without one) |
+| `ttfa_ms` | lower | ms | tts | `bench audio` or a matching modality client (UNPROVEN without one) |
+| `rtf` | lower | × real time | tts, stt | `bench audio` for TTS; an external matching client for STT |
 | `clip_ms`, `clips_per_hour` | lower, higher | ms, clips/h | video | `bench clip` |
 
 A target that does not apply to the modality is reported NOT RUN.
@@ -162,6 +163,24 @@ constraints:
 ## Consumer-device and run-policy fields
 
 `modality: image` adds `image_ms`/`images_per_hour`; `tts` adds `ttfa_p95_ms` (first playable audio). Both need a real modality adapter, not a token endpoint. [Affordability](affordability.md) defines memory/latency/quality acceptance: `goals.affordability` requires `memory_gb_max`/`memory_kind`, optional smaller stretch cap, host cap and `offload_allowed`; `lead: affordability` additionally requires a latency target and `quality.protocol`. Image quality budgets use PSNR/SSIM/LPIPS, speech WER/CER/speaker similarity; protocols also cover reference/A/A, datasets/seeds, margins/CIs and human review.
+
+For TTS, omit `max_tokens` and declare the speech workload:
+
+```yaml
+modality: tts
+io_modes: {input: complete, output: streaming}
+workload:
+  client: bench_audio
+  tts:
+    voice: speaker-a
+    sample_rate: 24000
+    lead_metric: first_audio_ms       # or rtf / complete_audio_ms
+    text_length_buckets:
+      - {name: short, min_chars: 1, max_chars: 80}
+      - {name: long, min_chars: 81, max_chars: 800}
+```
+
+These pins describe the intended run; pass them to the adapter and verify effective settings. `bench_audio` removes the missing-client warning, but timing does not prove quality or fresh-process interleaving. [Audio contracts and metric definitions](https://github.com/KittenML/inferencekit/blob/main/docs/media-benchmarks.md) apply; STT needs `client: external`.
 
 ### Relative modality budgets
 

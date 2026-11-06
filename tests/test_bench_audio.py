@@ -150,6 +150,36 @@ def test_extend_rejects_changed_request_artifact(tmp_path, store, monkeypatch):
             invoke(server, path, rounds=1, warmup=0, extend=first["evidence_id"])
 
 
+def test_extend_across_restarted_ports_requires_stable_endpoint_identity(tmp_path, store, monkeypatch):
+    monkeypatch.setenv("INFERENCEKIT_KEY_FILE", str(tmp_path / "endpoint.key"))
+    path = fixture_file(tmp_path)
+    with FakeAudioServer() as first_server, FakeAudioServer() as restarted_server:
+        first = invoke(first_server, path, rounds=1, warmup=0, endpoint_id="tts-baseline")
+        second = invoke(restarted_server, path, rounds=1, warmup=0, endpoint_id="tts-baseline",
+                        extend=first["evidence_id"])
+        assert [r["index"] for r in second["data"]["rounds"]] == [0, 1]
+        assert len([a for a in second["artifacts"] if a["role"] == "audio_pcm"]) == 2
+        assert first_server.url not in json.dumps(second)
+        assert restarted_server.url not in json.dumps(second)
+        with pytest.raises(OpError, match="same endpoint-id"):
+            invoke(restarted_server, path, rounds=1, warmup=0, endpoint_id="different",
+                   extend=second["evidence_id"])
+        with pytest.raises(OpError, match="same workload"):
+            invoke(restarted_server, path, rounds=1, warmup=0, endpoint_id="tts-baseline",
+                   model_revision="different-checkpoint", extend=second["evidence_id"])
+
+
+def test_changed_port_error_explains_fix_without_disclosing_urls(tmp_path, store, monkeypatch):
+    monkeypatch.setenv("INFERENCEKIT_KEY_FILE", str(tmp_path / "endpoint.key"))
+    path = fixture_file(tmp_path)
+    with FakeAudioServer() as first_server, FakeAudioServer() as restarted_server:
+        first = invoke(first_server, path, rounds=1, warmup=0)
+        with pytest.raises(OpError, match="port.*endpoint-id") as error:
+            invoke(restarted_server, path, rounds=1, warmup=0, extend=first["evidence_id"])
+        assert first_server.url not in str(error.value)
+        assert restarted_server.url not in str(error.value)
+
+
 def test_endpoint_with_inline_auth_is_rejected_without_echo(tmp_path, store):
     with FakeAudioServer() as server:
         with pytest.raises(OpError) as error:

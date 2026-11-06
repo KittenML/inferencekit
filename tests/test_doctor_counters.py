@@ -219,7 +219,7 @@ def test_probe_never_raises(monkeypatch, store):
 def _doctor(monkeypatch, store, fake, perm_status="unknown"):
     use(monkeypatch, fake)
     monkeypatch.setattr(dr, "counter_permission", lambda: {"status": perm_status, "reason": "static", "euid": 0})
-    monkeypatch.setattr(dr, "query_gpus", lambda: [])
+    monkeypatch.setattr(dr, "query_gpus", lambda: [{"name": "Fixture NVIDIA GPU"}])
     monkeypatch.setattr(dr, "tool_version", lambda name: "2026.1" if name in fake.tools else None)
     return registry.call("doctor", {"probe_profilers": True})
 
@@ -237,7 +237,7 @@ def test_doctor_probe_decides_the_counter_status(monkeypatch, store):
 
 def test_doctor_without_probe_says_probe_needed(monkeypatch, store):
     monkeypatch.setattr(dr, "counter_permission", lambda: {"status": "unknown", "reason": "no params (probe needed)"})
-    monkeypatch.setattr(dr, "query_gpus", lambda: [])
+    monkeypatch.setattr(dr, "query_gpus", lambda: [{"name": "Fixture NVIDIA GPU"}])
     rec = registry.call("doctor", {})
     assert "counters unknown (probe needed)" in rec["summary"] and "profiler_probe" not in rec["data"]
     assert any(x.startswith("profiling counter access unknown") for x in rec["limitations"])
@@ -246,7 +246,7 @@ def test_doctor_without_probe_says_probe_needed(monkeypatch, store):
 def test_cli_flag(monkeypatch, tmp_path, capsys):
     calls = []
     monkeypatch.setattr(dr, "profiler_probe", lambda python: calls.append(python) or {"ncu": None, "nsys": None})
-    monkeypatch.setattr(dr, "query_gpus", lambda: [])
+    monkeypatch.setattr(dr, "query_gpus", lambda: [{"name": "Fixture NVIDIA GPU"}])
     try:
         assert cli.main(["--runs-dir", str(tmp_path / "runs"), "doctor", "--probe-profilers"]) == 0
     finally:
