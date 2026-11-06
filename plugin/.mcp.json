@@ -4,7 +4,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "inferencekit-cli[mcp]==0.1.0",
+        "inferencekit-cli[mcp]==0.1.1",
         "inferencekit",
         "mcp",
         "serve"

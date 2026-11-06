@@ -4,7 +4,7 @@ description: Profile-driven loop for building or patching inference engines and 
 license: Apache-2.0
 compatibility: Uses the inferencekit CLI (Python 3.10+, uv or uvx) or its MCP server, the target engine's toolchain and git. Profilers depend on hardware; the bundled CUDA engine skeleton is NVIDIA-only. Written for Claude Code, Codex and OpenCode.
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Optimising kernels: the profile-driven change loop

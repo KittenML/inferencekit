@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Make your model serve faster on your GPU, and prove it. Skills for Claude Code, Codex and OpenCode, plus a CLI and MCP server: your agent picks and tunes inference engines, can write GPU kernels, and backs every number with client-timed benchmarks, anti-cheat gates and quality checks.",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "plugins": [
     {
       "name": "inferencekit",
       "source": "./plugin",
       "description": "Make your model serve faster on your GPU, and prove it. Skills for Claude Code, Codex and OpenCode, plus a CLI and MCP server: your agent picks and tunes inference engines, can write GPU kernels, and backs every number with client-timed benchmarks, anti-cheat gates and quality checks.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "Stellon Labs"
       },

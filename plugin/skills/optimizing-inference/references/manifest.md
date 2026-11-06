@@ -24,7 +24,7 @@
                "chat_template_kwargs": {"enable_thinking": false},
                "extra_body": {"temperature": 0.7, "top_k": 50, "top_p": 0.9, "seed": 1234},
                "slo": {"ttft_p95_ms": 500, "tpot_p95_ms": 50, "max_fail": 0}},
-  "harness": {"inferencekit_version": "0.1.0", "wheel_sha256": "<sha256 of the wheel you ran>",
+  "harness": {"inferencekit_version": "0.1.1", "wheel_sha256": "<sha256 of the wheel you ran>",
               "dev_prompt_set_sha256": "<from inferencekit prompts verify>"},
   "agent_run": {"run_id": "<run-id>", "started": "<ISO>", "ended": "<ISO>"}
 }
@@ -65,7 +65,7 @@ One script in `runs/<run-id>/` that a stranger can run on a clean host with the 
 # Reproduce <run-id>: <model id>@<sha> on <gpu>. Agent-measured; re-run on a clean host to check.
 set -euo pipefail
 command -v uv || curl -LsSf https://astral.sh/uv/install.sh | sh; export PATH=$HOME/.local/bin:$PATH
-uv venv envs/ik && uv pip install --python envs/ik/bin/python "inferencekit-cli==0.1.0" "huggingface_hub[cli]"
+uv venv envs/ik && uv pip install --python envs/ik/bin/python "inferencekit-cli==0.1.1" "huggingface_hub[cli]"
 envs/ik/bin/hf download <model id> --revision <sha> --local-dir models/<dir>
 # per engine: venv + install commands from manifest.json, then launch, ready check, benchmark, stop
 # ... (generated from manifest.json; keep it in sync)

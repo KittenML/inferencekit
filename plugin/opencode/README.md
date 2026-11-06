@@ -34,7 +34,7 @@ An `opencode.json` with comments is never edited; the installer prints these key
   "mcp": {
     "inferencekit": {
       "type": "local",
-      "command": ["uvx", "--from", "inferencekit-cli[mcp]==0.1.0", "inferencekit", "mcp", "serve"],
+      "command": ["uvx", "--from", "inferencekit-cli[mcp]==0.1.1", "inferencekit", "mcp", "serve"],
       "enabled": true,
       "timeout": 120000
     }

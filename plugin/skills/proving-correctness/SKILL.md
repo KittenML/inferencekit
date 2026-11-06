@@ -4,7 +4,7 @@ description: Verify correctness and agreed quality after engine, kernel, precisi
 license: Apache-2.0
 compatibility: Needs inferencekit (Python 3.10+, uv or uvx) and the workload's reference/quality adapter. Text examples use OpenAI-compatible endpoints; media uses native pipelines. Disassembly tools and byte-identity proofs depend on the backend.
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Proving correctness and quality

@@ -4,7 +4,7 @@ description: Finds where inference time goes and why a kernel is slow on NVIDIA,
 license: Apache-2.0
 compatibility: Needs the inferencekit CLI (Python 3.10+, uv or uvx) or its MCP server. NVIDIA capture uses Nsight; supported AMD setups use the rocprof wrapper; Apple capture uses vendor tools with manual evidence files. Existing profiles need no GPU. Written for Claude Code, Codex and OpenCode.
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Profiling inference: timeline first, then kernels

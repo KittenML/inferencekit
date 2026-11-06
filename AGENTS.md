@@ -4,7 +4,7 @@ These rules apply to any agent doing inference performance work with this reposi
 
 ## Tools
 
-- CLI `inferencekit <command>`; MCP server `inferencekit mcp serve` (stdio; every command is also a tool with the same arguments; launcher `uvx --from 'inferencekit-cli[mcp]==0.1.0' inferencekit mcp serve`). Commands and flags: `inferencekit --help` and `inferencekit <command> --help`.
+- CLI `inferencekit <command>`; MCP server `inferencekit mcp serve` (stdio; every command is also a tool with the same arguments; launcher `uvx --from 'inferencekit-cli[mcp]==0.1.1' inferencekit mcp serve`). Commands and flags: `inferencekit --help` and `inferencekit <command> --help`.
 - Measure: `doctor`, `ceiling bw`, `roofline`, `bench rounds` (runs `bench serve` per engine per round, fresh process, balanced order: published numbers), `bench serve` (one client-timed call), `bench decode` (engine-timed; engines without a server), `bench image`, `bench audio` (client-timed media screening; contracts in `docs/media-benchmarks.md`), `compare` (matching benchmark kinds; load records are refused).
 - Check: `gates run`, `prompts verify|show`, `quality trajectory|score|gsm8k|sampling`, `correctness`.
 - Diagnose: `nsys capture|analyze`, `ncu capture|summarize`.

@@ -202,10 +202,10 @@ More things to ask for: [docs/examples.md](https://github.com/KittenML/inference
 ## CLI and MCP server
 
 ```bash
-uv tool install "inferencekit-cli==0.1.0"
+uv tool install "inferencekit-cli==0.1.1"
 inferencekit doctor                                         # Hardware, runtime and profiler availability
 inferencekit gates run --base-url http://127.0.0.1:8000     # anti-cheat gates on any OpenAI-compatible server
-uvx --from 'inferencekit-cli[mcp]==0.1.0' inferencekit mcp serve   # MCP server (stdio) for any MCP client
+uvx --from 'inferencekit-cli[mcp]==0.1.1' inferencekit mcp serve   # MCP server (stdio) for any MCP client
 ```
 
 Every CLI command is also an MCP tool with the same arguments. Text benchmarks, gates and quality checks talk HTTP to OpenAI-compatible servers. Image and streamed speech measurements use the [media adapter contracts](https://github.com/KittenML/inferencekit/blob/main/docs/media-benchmarks.md).
