@@ -51,6 +51,12 @@ Examples of coding agents using inferencekit to optimize inference. The workflow
 
 **Baseline selection includes competing engines:** Gemma's tuned vLLM baseline followed a vLLM/SGLang screen; LTX's ComfyUI baseline was fastest in the tested ComfyUI, Diffusers and official LTX pipeline screen.
 
+### Kitten TTS: faster speech across CPUs and GPUs
+
+**Kitten TTS 2 delivers about 5–7× faster complete-audio generation than vLLM and llama.cpp on RTX PRO 6000 in our tested configurations—and we’re pushing further with inferencekit.**
+
+We’re using inferencekit to continuously improve [Kitten Inference](https://github.com/KittenML/kitten-inference), our native engines for Kitten TTS 0.8 and Kitten TTS 2. Our focus is faster speech generation, lower first-audio latency and efficient memory use across CPUs, NVIDIA and AMD GPUs, with speech-quality checks throughout.
+
 ### Gemma 4: faster decode on RTX 5090
 
 Claude Opus 5.5 used inferencekit to build an exact sampler, batch-1 NVFP4 MoE kernels, a pruned output layer and lossless weight packing. **1.33× faster single-user decode than tuned vLLM**, with the same NVFP4 weights and activation scheme.
