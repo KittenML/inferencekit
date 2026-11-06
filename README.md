@@ -128,7 +128,7 @@ Each check ends PASS, FAIL, UNPROVEN (not enough evidence) or NOT RUN. A missing
 
 ## Features
 
-- **9 skills, 4 commands and 5 read-only subagents**, backed by [44 executable CLI/MCP operations](https://github.com/KittenML/inferencekit/tree/main/src/inferencekit/ops/).
+- **9 skills, 4 commands and 5 read-only subagents**, backed by [45 executable CLI/MCP operations](https://github.com/KittenML/inferencekit/tree/main/src/inferencekit/ops/).
 - **Reusable run tools:** [ikstep](https://github.com/KittenML/inferencekit/blob/main/plugin/skills/optimizing-inference/references/remote-host.md) manages jobs on local or remote Linux hosts, readiness checks and concise status output.
 - **Compact output:** CLI summaries and bounded MCP responses keep full evidence records on disk, with paging for large lists.
 - **Speed-of-light ceilings:** measured memory bandwidth (`ceiling bw`) and exact bytes per token read from the checkpoint's safetensors headers (`roofline`), including NVFP4, FP8 and mixture-of-experts models.

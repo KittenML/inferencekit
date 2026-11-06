@@ -13,7 +13,7 @@ from inferencekit.registry import OpError
 CONTRACT_TOOLS = {"doctor", "roofline", "measure_bandwidth", "bench_decode", "capture_nsys", "analyze_nsys",
                   "capture_ncu", "summarize_ncu", "compare", "check_correctness", "list_evidence",
                   "inspect_evidence", "report"}
-CONTRACT_TOOLS |= {"intake_template", "intake_validate", "intake_budget"}  # intake
+CONTRACT_TOOLS |= {"intake_template", "intake_validate", "intake_budget", "intake_resume"}  # intake
 CONTRACT_TOOLS |= {"build_review", "ledger_trailers", "history"}  # review page and ledger
 CONTRACT_TOOLS |= {"quality_trajectory", "quality_score", "quality_gsm8k", "quality_niah"}  # quality checks
 CONTRACT_TOOLS |= {"quality_sampling"}  # first-token sampler check (draws vs the server's own logprobs)
@@ -126,3 +126,47 @@ def test_mcp_hint_inside_a_page_item_points_at_the_real_path():
     view = fit(result, max_chars=8_000)
     cut = view["items"][0]["stalls"]
     assert cut["truncated"] and "path='data.kernels.7.stalls'" in cut["more"]
+
+
+def test_mcp_preserves_operation_and_source_arguments_when_shortening_a_page():
+    from inferencekit.ops.store import page
+
+    args = {"run_dir": "runs/experiment", "file": "alternate-intake.yaml", "now": "2026-11-05T21:00:00Z"}
+    rows = [{"name": f"row_{i}", "detail": "x" * 600} for i in range(100)]
+    source = {"pagination": {"tool": "intake_resume", "args": args}, **page(rows, 10, 50)}
+    view = fit(source, max_chars=6000)
+    k = len(view["items"])
+    assert len(json.dumps(view)) <= 6000 and 1 <= k < 50
+    assert view["next_call"] == {"tool": "intake_resume", "arguments": {**args, "offset": 10 + k, "limit": k}}
+    assert view["next_offset"] == 10 + k
+    assert source["pagination"]["args"] == args and "next_call" not in source
+
+
+@pytest.mark.parametrize("width,max_chars", [(600, 9802), (823, 32000)])
+def test_resume_page_hint_overhead_cannot_skip_unshown_items(width, max_chars):
+    from inferencekit.ops.store import page
+
+    args = {"run_dir": "runs/experiment", "file": "original.json", "now": "2026-11-05T21:00:00Z"}
+    rows = [{"index": i, "summary": "x" * width} for i in range(100)]
+    offset, limit, seen = 0, 50, []
+    while offset is not None:
+        source = {"pagination": {"tool": "intake_resume", "args": args}, **page(rows, offset, limit)}
+        if source["next_offset"] is not None:
+            source["next_call"] = {"tool": "intake_resume", "arguments": {
+                **args, "offset": source["next_offset"], "limit": limit}}
+        before = json.dumps(source)
+        shown = fit(source, max_chars=max_chars)
+        assert json.dumps(source) == before
+        assert len(json.dumps(shown)) <= max_chars
+        assert isinstance(shown["items"], list) and shown["items"]
+        assert shown["items"][0]["index"] == offset
+        seen.extend(row["index"] for row in shown["items"])
+        offset = shown["next_offset"]
+        if offset is not None:
+            assert offset == shown["items"][-1]["index"] + 1
+            call = shown["next_call"]
+            assert call["tool"] == "intake_resume"
+            assert {k: call["arguments"][k] for k in args} == args
+            assert call["arguments"]["offset"] == offset
+            limit = call["arguments"]["limit"]
+    assert seen == list(range(100))

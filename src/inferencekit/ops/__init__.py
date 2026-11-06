@@ -17,6 +17,7 @@ from inferencekit.ops import (  # noqa: F401
     manifest,
 )
 from inferencekit.ops import intake  # noqa: F401,E402
+from inferencekit.ops import resume  # noqa: F401,E402
 from inferencekit.ops import quality  # noqa: F401,E402
 from inferencekit.ops import bench_serve  # noqa: E402,F401
 from inferencekit.ops import bench_rounds  # noqa: F401,E402

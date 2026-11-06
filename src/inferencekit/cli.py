@@ -116,8 +116,8 @@ def output_mode(flag: bool) -> str:
 
 def is_record(result) -> bool:
     """An evidence record (it has an id, a kind and a summary), as opposed to a listing or a check result."""
-    return isinstance(result, dict) and all(isinstance(result.get(k), str) and result.get(k)
-                                            for k in ("evidence_id", "kind", "summary"))
+    return isinstance(result, dict) and result.get("view") != "summary" and \
+        all(isinstance(result.get(k), str) and result.get(k) for k in ("evidence_id", "kind", "summary"))
 
 
 def _one_line(text, limit: int | None = None) -> str:

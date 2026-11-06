@@ -197,6 +197,12 @@ def test_single_mode_record(store, tmp_path):
     assert metric(rec, "e2e_ms", "p95")["value"] >= metric(rec, "e2e_ms")["value"]
     assert len(rec["data"]["rounds"]) == 2 and {"decode_tok_s", "t_start", "total_ms"} <= set(rec["data"]["rounds"][0])
     assert rec["data"]["token_count_methods"] == {"stream_token_ids:choice_token_ids": 8}
+    accounting = rec["data"]["request_accounting"]
+    assert accounting == {"timed_requests": 8, "successful_requests": 8, "failed_requests": 0,
+                          "selected_token_counts": 8, "unknown_token_counts": 0, "potentially_estimated_counts": 0,
+                          "selected_output_tokens_total": 128, "selected_output_tokens_min": 16,
+                          "selected_output_tokens_max": 16, "successful_count_mismatches": 0}
+    assert registry.call("inspect_evidence", {"id": rec["evidence_id"], "view": "summary"})["request_accounting"] == accounting
     assert rec["data"]["request_profile"]["asked"]["exact_length"] == ["ignore_eos", "min_tokens"]
     # outputs: text, token ids, finish reason, usage, timings for every prompt
     out = json.loads((tmp_path / "run/outputs/fake-vllm/short/short-0.json").read_text())
@@ -391,3 +397,32 @@ def test_cli_parses_bench_serve():
                                         "p.jsonl", "--mode", "load", "--concurrency", "1", "--concurrency", "8",
                                         "--slo-ttft-p95-ms", "500", "--gpu-price-usd-h", "0.6"])
     assert ns._op == "bench_serve" and ns.concurrency == [1, 8] and ns.slo_ttft_p95_ms == 500.0
+
+
+def test_request_accounting_does_not_count_failed_or_unknown_tokens():
+    from inferencekit.ops.bench_serve import _request_accounting
+
+    rows = [{"ok": True, "n_tokens": 8, "token_count_method": "usage", "count_mismatch": None},
+            {"ok": True, "n_tokens": None, "count_mismatch": None},
+            {"ok": True, "n_tokens": 4, "token_count_method": "min(stream_token_ids:choice_token_ids,usage)", "count_mismatch": "ids differ from usage"},
+            {"ok": False, "n_tokens": 30, "count_mismatch": None}]
+    assert _request_accounting(rows) == {
+        "timed_requests": 4, "successful_requests": 3, "failed_requests": 1,
+        "selected_token_counts": 2, "unknown_token_counts": 1, "potentially_estimated_counts": 1,
+        "selected_output_tokens_total": 12, "selected_output_tokens_min": 4,
+        "selected_output_tokens_max": 8, "successful_count_mismatches": 1}
+    assert _request_accounting([{"ok": True, "n_tokens": None}])["selected_output_tokens_total"] is None
+
+
+def test_sse_event_accounting_is_labeled_estimated(store, tmp_path):
+    prompts = write_prompts(tmp_path / "dev.jsonl", buckets=("short",), per_bucket=2, max_tokens=8)
+    with FakeServer(FakeConfig(ids="none", usage=False, tokens_per_event=4, ttft_s=0.001, itl_s=0.001)) as srv:
+        rec = run_single(srv, prompts, rounds=1, warmup=0)
+    accounting = rec["data"]["request_accounting"]
+    assert accounting["successful_requests"] == 2
+    assert accounting["potentially_estimated_counts"] == 2
+    assert accounting["selected_output_tokens_total"] < 16
+    assert rec["data"]["token_count_methods"] == {"sse_events": 2}
+    view = registry.call("inspect_evidence", {"id": rec["evidence_id"], "view": "summary"})
+    assert view["request_accounting"] == accounting
+    assert any("SSE events" in limitation for limitation in view["limitations"])

@@ -304,11 +304,14 @@ def validate(record: dict) -> list[str]:
     return errors
 
 
-def verify(record: dict) -> dict:
+def verify(record: dict, *, include_error_count: bool = False) -> dict:
     """Integrity check: does the id match the content, and does the record fit the schema?"""
     errors = validate(record)
-    return {"id_ok": compute_id(record) == record.get("evidence_id"), "schema_ok": not errors,
-            "schema_errors": errors[:20]}
+    result = {"id_ok": compute_id(record) == record.get("evidence_id"), "schema_ok": not errors,
+              "schema_errors": errors[:20]}
+    if include_error_count and errors:
+        result["schema_error_count"] = len(errors)
+    return result
 
 
 def integrity_problem(record: dict) -> str | None:

@@ -997,12 +997,15 @@ def display_path(path: str | os.PathLike) -> str:
     return s
 
 
-def redact(intake: dict) -> dict:
+def redact(intake: dict, *, home: str | None = None) -> dict:
     """A copy of an intake that is safe to keep in the run directory (which is synced, reviewed and published).
 
     * every ``hardware.access`` field except ``kind`` becomes ``<redacted>`` (host, user, port, key_path);
     * the host anywhere else (e.g. inside ``quality.reference.base_url``) and ``<user>@`` become ``<redacted>``;
     * the home directory at the start of a path becomes ``~`` (it names the local user).
+
+    ``home`` defaults to this account's home; an empty string disables home substitution.
+    Resume validation can supply the original prefix when checking a copied run.
     """
     d = json.loads(json.dumps(intake, default=str))
     access = (d.get("hardware") or {}).get("access") if isinstance(d.get("hardware"), dict) else None
@@ -1012,7 +1015,7 @@ def redact(intake: dict) -> dict:
         user = access.get("user") if isinstance(access.get("user"), str) and access.get("user") != REDACTED else None
     host_re = re.compile(r"(?<![\w.-])" + re.escape(host) + r"(?![\w-])") if host else None
     user_re = re.compile(r"(?<![\w.-])" + re.escape(user) + r"@") if user else None
-    home = _home()
+    home = _home() if home is None else home
     home_prefix = home.rstrip(os.sep) + os.sep if home else None
 
     def walk(node):

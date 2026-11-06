@@ -31,6 +31,10 @@ No plan or plan approval is required by default. Show or create one only when re
 
 ## Start or resume
 
+Existing run: first call `inferencekit intake resume runs/<run-id>`; inspect files for reported issues or required details ([state.md](references/state.md)).
+
+Fresh run:
+
 ```bash
 inferencekit intake template > intake.yaml   # only when no intake was supplied
 inferencekit intake validate intake.yaml --allow-placeholders
@@ -39,7 +43,7 @@ export INFERENCEKIT_RUNS_DIR="$PWD/runs/<run-id>/evidence"
 inferencekit intake budget runs/<run-id>
 ```
 
-Use the derived run id; `--run-dir` starts the clock and pins the intake. Resume from [state.md](references/state.md). With SSH, runtime and client run on the device host ([remote-host.md](references/remote-host.md)).
+Use the derived run id; `--run-dir` pins the intake and starts the clock. SSH runtime and client share the [device host](references/remote-host.md).
 
 ## 1. Define the actual task
 

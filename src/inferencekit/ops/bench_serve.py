@@ -611,7 +611,7 @@ def _single(*, call, store, runner, pset, ep, label, seed, run_dir, gpu_name, gp
             summary += f"; {len(failed)} failed"
         data = {"label": label, "base_url_kind": "local" if ep.is_local() else "remote", "server": info,
                 "prompt_set_sha256": pset.sha256, "prompt_set_name": pset.name, "buckets": table,
-                "rounds": round_rows, "request_profile": {"engine_kind": runner.engine_kind, "api": runner.api,
+                "rounds": round_rows, "request_accounting": _request_accounting(all_rows), "request_profile": {"engine_kind": runner.engine_kind, "api": runner.api,
                                                           "asked": runner.asked,
                                                           "note": profiles.PROFILES[runner.engine_kind].note},
                 "prefix_cache": {"mode": "cold" if cache_salt else "warm",
@@ -631,6 +631,23 @@ def _single(*, call, store, runner, pset, ep, label, seed, run_dir, gpu_name, gp
         record = ev.build(call, kind="serve_benchmark", claim_class="observed", summary=summary, identity_=ident,
                           metrics=mets, artifacts=artifacts, missing=missing, limitations=limitations, data=data)
         return store.save(record, staging)
+
+
+def _request_accounting(rows):
+    """Summarize timed rows after collection; token totals cover successful requests only."""
+    ok = [r for r in rows if r["ok"]]
+    counts = [n for r in ok if type(n := r.get("n_tokens")) is int and n >= 0]
+    return {"timed_requests": len(rows), "successful_requests": len(ok),
+            "failed_requests": len(rows) - len(ok), "selected_token_counts": len(counts),
+            "unknown_token_counts": len(ok) - len(counts),
+            "potentially_estimated_counts": sum(
+                1 for r in ok if type(r.get("n_tokens")) is int and r["n_tokens"] >= 0
+                and not (r.get("token_count_method") == "usage"
+                         or str(r.get("token_count_method") or "").startswith("stream_token_ids:"))),
+            "selected_output_tokens_total": sum(counts) if counts else None,
+            "selected_output_tokens_min": min(counts) if counts else None,
+            "selected_output_tokens_max": max(counts) if counts else None,
+            "successful_count_mismatches": sum(bool(r.get("count_mismatch")) for r in ok)}
 
 
 def _method_counts(rows):
@@ -789,7 +806,7 @@ def _load(*, call, store, runner, pset, ep, label, seed, run_dir, gpu_name, gpu_
                 "levels": level_data, "salted_requests": pool.salted, "timer": "client perf_counter_ns",
                 "request_profile": {"engine_kind": runner.engine_kind, "api": runner.api, "asked": runner.asked,
                                     "note": profiles.PROFILES[runner.engine_kind].note},
-                "token_count_methods": _method_counts(all_rows)}
+                "token_count_methods": _method_counts(all_rows), "request_accounting": _request_accounting(all_rows)}
         if not [r for r in all_rows if r["ok"]]:
             missing.append("every request failed")
         kind_word = "closed-loop stress" if closed_loop else "open-loop"
