@@ -1,6 +1,10 @@
 # Candidate engines
 
-Pick about 5 engines for the modality and GPU, then **verify each by launching it** on the pinned local checkpoint, at its precision, with a smoke request. Everything below is a starting point: flags move between releases, **the installed version's `--help` is the authority**, and the startup log is the proof.
+Search the web before selecting baselines for each run: use the exact model/architecture, modality, precision, workload and hardware. Check current official releases, support tables, repositories and vendor/model recipes; follow benchmark claims to their configurations and measurement conditions. Discover applicable engines beyond the examples below. There is no fixed engine list or count.
+
+Choose the strongest applicable candidates within the approved scope and budget. Record source URLs/access dates and reasons for exclusions or untested candidates in the existing research note. Recheck freshness and compatibility before reusing a previous survey. If web access is unavailable, state that current coverage is unverified; do not claim the latest or best current baseline.
+
+**Verify each candidate by launching it** on the pinned local checkpoint, at its precision, with a smoke request, then tune and measure it. Web rankings do not prove which engine wins locally. Keep versions, workloads and quality checks pinned during each comparison. Flags move between releases: **the installed version's `--help` is the authority**, and the startup log is the proof.
 
 ## Common procedure (every engine)
 
@@ -84,7 +88,7 @@ Pick about 5 engines for the modality and GPU, then **verify each by launching i
   - Block reuse (prefix caching) may default to on; turn it off.
   - Support for a new GPU architecture or a new quantization format often lands in release candidates first. That is the "one documented fix".
 
-### Fifth candidate (one of these, when it applies)
+### Additional examples, when applicable
 - **LMDeploy:** `lmdeploy serve api_server <model-dir> --server-port 8005 --backend turbomind|pytorch`. The resolved config is logged at startup. KV quantization (`--quant-policy`) is a precision change.
 - **ExLlamaV3 via TabbyAPI:** EXL3 weights are a different precision, so it is a separate track only.
 - **A custom engine** (`candidates.include`) enters like the others: a reproducible install (git URL, commit, build commands) and the [custom-engine contract](#custom-engine-contract) below, so it can be gated.
@@ -106,16 +110,16 @@ A custom or patched engine serves all of this, or the harness cannot time, gate 
 
 ## Other hardware (AMD ROCm, x86 CPU, Apple Silicon)
 
-NVIDIA is fully supported; on other hardware the skills guide the flow and the CLI does less ([hardware.md](../../inference-triage/references/hardware.md)). The common procedure above holds. The candidates:
+NVIDIA is fully supported; on other hardware the skills guide the flow and the CLI does less ([hardware.md](../../inference-triage/references/hardware.md)). The common procedure above holds. Recheck these examples and exclusions against current support:
 
-| Platform | Candidates to try | Excluded for the hardware |
+| Platform | Candidate examples | Exclusions to recheck |
 |---|---|---|
 | AMD ROCm (MI300X, MI325X, MI350 series, Radeon) | vLLM (ROCm image, AITER on), SGLang (ROCm image), llama.cpp (HIP build), a custom engine | TensorRT-LLM |
 | x86 CPU | llama.cpp `llama-server`, vLLM CPU, OpenVINO Model Server, a custom engine | TensorRT-LLM |
 | Apple Silicon | mlx-lm `mlx_lm.server`, llama.cpp (Metal), a custom engine | TensorRT-LLM |
 | Intel GPU, Google TPU | [other-accelerators.md](../../inference-triage/references/other-accelerators.md) | TensorRT-LLM |
 
-- **Fewer than about 5 is fine here.** Record each excluded engine with the reason "not available on <platform>". That is not NOT SUPPORTED, because nothing was launched. Any engine not in the table gets an `engine-scout` run with the platform in the query, and a launch decides.
+- Record each exclusion with its source and hardware-specific reason. An engine that was not launched is untested, not NOT SUPPORTED. Research candidates outside this table with `engine-scout`, including the hardware in the query; a launch decides support.
 - **Launch lines, the settings to prove and the pitfalls** per platform: [amd-rocm.md](../../inference-triage/references/amd-rocm.md), [cpu.md](../../inference-triage/references/cpu.md), [apple-silicon.md](../../inference-triage/references/apple-silicon.md).
 - **Identity in every `bench rounds` call:** `--serve-args "--gpu-name <hardware> --gpu-count <n>"`.
 - **Precision names hide formats:** FP8 on MI300X (FNUZ) is not NVIDIA's e4m3fn; MLX 8-bit is not Q8_0; an OpenVINO int8 export is not either of them. Rank only rows whose resolved formats match.
