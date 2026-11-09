@@ -191,6 +191,8 @@ Updating, removing, per-project installs and OpenCode's options: [docs/install.m
 
 ## Try it
 
+These examples use Claude Code. Enter them in your agent’s chat; for Codex or OpenCode, use the corresponding command or skill from the table above.
+
 ```text
 /inferencekit:optimize-inference Qwen/Qwen3-8B-FP8 on 1x RTX 5090, fastest single-user decode, by 6h
 ```
@@ -201,7 +203,7 @@ To tune existing engines without custom kernels:
 /inferencekit:optimize-inference Tune vLLM and SGLang for my model and hardware using their built-in settings only; do not write custom kernels.
 ```
 
-In OpenCode the command is `/optimize-inference`. It asks only for missing preferences and spending authorization; a plan is optional. For a repeatable setup, start from an intake file: `inferencekit intake template --out intake.yaml`, then `/inferencekit:optimize-inference intake.yaml`. For unattended runs, set `non_interactive: true` and `budget.approved: true` with a cap.
+The agent asks only for missing details, preferences and spending authorization; a plan is optional.
 
 More things to ask for: [docs/examples.md](https://github.com/KittenML/inferencekit/blob/main/docs/examples.md).
 
