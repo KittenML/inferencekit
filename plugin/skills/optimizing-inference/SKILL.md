@@ -49,7 +49,7 @@ Use the derived run id; `--run-dir` pins the intake and starts the clock. SSH ru
 
 Validate [intake](references/intake.md); pin revision, component precisions, processing, dataset, shapes and output work. Derive workload details from examples/logs ([workload.md](references/workload.md)); record assumptions.
 
-Choose response latency, sustained throughput, peak memory or affordable hardware under a latency/quality limit ([affordability.md](references/affordability.md)). Token metrics and GSM8K belong to text workloads. Speech needs content, completion and speaker checks; images need semantic/visual checks; video needs temporal checks. Other architectures need a registered task-specific adapter and protocol; unsupported CLI modalities remain UNPROVEN rather than being relabelled as text.
+Choose response latency, sustained throughput, peak memory or affordable hardware under a latency/quality limit ([affordability.md](references/affordability.md)). Apply a requested [compute resource policy](references/resource-policy.md). Token metrics and GSM8K belong to text workloads. Speech needs content, completion and speaker checks; images need semantic/visual checks; video needs temporal checks. Other architectures need a registered task-specific adapter and protocol; unsupported CLI modalities remain UNPROVEN rather than being relabelled as text.
 
 Use [researching-optimizations](../researching-optimizations/SKILL.md) now, from the pinned model, shapes, hardware and runtime. It returns a short experiment queue, including existing engine paths to try before custom code.
 

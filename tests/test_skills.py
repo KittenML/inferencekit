@@ -40,6 +40,8 @@ MAX_VIDEO_REFERENCE_BYTES = 16_000
 # The on-device protocol is loaded only for phone workloads.
 PHONE_REFERENCE = SKILLS / "inference-triage" / "references" / "phones.md"
 MAX_PHONE_REFERENCE_BYTES = 4_000
+RESOURCE_POLICY_REFERENCE = SKILLS / "optimizing-inference" / "references" / "resource-policy.md"
+MAX_RESOURCE_POLICY_REFERENCE_BYTES = 3_500
 # Loaded only after the final report or for an explicit contribution request; keep
 # publication details out of the optimization context while bounding this reference.
 CONTRIBUTION_REFERENCE = PLUGIN / "skills" / "optimizing-inference" / "references" / "engine-contribution.md"
@@ -184,11 +186,13 @@ def test_file_sizes_bounded():
     video = sum(p.stat().st_size for p in VIDEO_REFERENCES)
     contribution = CONTRIBUTION_REFERENCE.stat().st_size
     phone = PHONE_REFERENCE.stat().st_size
-    total = sum(p.stat().st_size for p in files) - skel - video - contribution - phone
+    resource_policy = RESOURCE_POLICY_REFERENCE.stat().st_size
+    total = sum(p.stat().st_size for p in files) - skel - video - contribution - phone - resource_policy
     assert total <= MAX_PLUGIN_BYTES, f"plugin/ (without the skeleton and separately capped references) is {total} bytes"
     assert skel <= MAX_SKELETON_BYTES, f"the engine skeleton is {skel} bytes"
     assert video <= MAX_VIDEO_REFERENCE_BYTES, f"the video references are {video} bytes"
     assert phone <= MAX_PHONE_REFERENCE_BYTES, f"the phone reference is {phone} bytes"
+    assert resource_policy <= MAX_RESOURCE_POLICY_REFERENCE_BYTES, f"the resource policy reference is {resource_policy} bytes"
     assert contribution <= MAX_CONTRIBUTION_REFERENCE_BYTES, f"the contribution reference is {contribution} bytes"
 
 

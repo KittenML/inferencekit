@@ -846,6 +846,7 @@ def derive(intake: dict) -> dict:
                             round(hours * REPORT_RESERVE, 3) if hours else None),
         "stage_timeboxes": intake["budget"].get("stage_timeboxes", True),
         "affordability": goals.get("affordability"),
+        **({"resource_policy": goals["resource_policy"]} if "resource_policy" in goals else {}),
         "precision_rule": _precision_rule(intake["model"], fidelity, intake["modality"]),
         "fidelity_rule": {"value": fidelity, "fidelity": fidelity, "source": rules["fidelity"]["source"],
                           "text": ("exact: equality of the declared deterministic/seeded outputs is required; "

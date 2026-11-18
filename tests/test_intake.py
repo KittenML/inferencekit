@@ -171,6 +171,19 @@ def test_capacity_lead_needs_an_slo_and_adds_load_mode():
                                           "unit": "streams/GPU", "buckets": list(intake.BUCKETS), "applies": True}
 
 
+@pytest.mark.parametrize("policy", ["maximum_performance", "shared_device_efficiency"])
+def test_explicit_resource_policy_is_retained(policy):
+    result = intake.check(base(goals={"resource_policy": policy}))
+    assert result["intake"]["goals"]["resource_policy"] == policy
+    assert result["derived"]["resource_policy"] == policy
+
+
+def test_resource_policy_remains_opt_in():
+    assert "resource_policy" not in intake.check(base())["derived"]
+    with pytest.raises(OpError, match="resource_policy"):
+        intake.check(base(goals={"resource_policy": "fast"}))
+
+
 def test_native_tts_capacity_has_speech_slos_and_device_identity():
     data = base(modality="tts", hardware={"device": "Galaxy S25"}, budget={"approved": True},
                 workload={"client": "audio_capacity", "concurrency": [1, 2, 3]},

@@ -64,6 +64,10 @@
       "additionalProperties": false,
       "properties": {
         "lead": {"enum": ["single_user", "capacity", "affordability"], "default": "single_user"},
+        "resource_policy": {
+          "enum": ["maximum_performance", "shared_device_efficiency"],
+          "description": "Optional placement objective: maximize the stated performance metric across supported units, or meet it with headroom for other workloads."
+        },
         "affordability": {
           "type": "object", "additionalProperties": false,
           "required": ["memory_gb_max", "memory_kind"],
