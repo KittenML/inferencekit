@@ -154,8 +154,7 @@ def import_audio_capacity(call, timings, plan, fixtures, label, model, model_rev
     slo = {"rtf_p95": slo_rtf_p95, "underruns": 0}
     if not first_audio_as_metric:
         slo["first_audio_p95_ms"] = slo_first_audio_p95_ms
-    active_limits = [value for name, value in slo.items() if name != "underruns"]
-    if any(not finite(v) or v <= 0 for v in active_limits):
+    if any(not finite(v) or v <= 0 for v in (slo_first_audio_p95_ms, slo_rtf_p95)):
         raise OpError("audio capacity SLOs must be finite and positive")
     for value in (label, model, model_revision, engine_version, hardware_name, model_dtype):
         if value is not None and (not value.strip() or ev.redact(value) != value):
