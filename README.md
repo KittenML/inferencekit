@@ -141,7 +141,6 @@ Each check ends PASS, FAIL, UNPROVEN (not enough evidence) or NOT RUN. A missing
 - **Engine triage and tuning:** vLLM, SGLang, llama.cpp, TensorRT-LLM, ComfyUI, Diffusers and others. Only settings that the engine's own logs show in effect are counted.
 - **Kernel work:** profiling routed by hardware, CUDA/HIP, Triton and Metal kernels, and torch.compile. The included [engine skeleton](https://github.com/KittenML/inferencekit/blob/main/plugin/skills/optimizing-kernels/skeleton/README.md) targets NVIDIA CUDA.
 - **One timer for every engine:** interleaved rounds in a balanced order, medians with 95% confidence intervals.
-- **Android speech capacity:** measure concurrent Kokoro-82M and VieNeu-TTS-v3-Turbo streams on the Galaxy S25 with the [on-device speech workflow](plugin/skills/inference-triage/references/phones.md).
 - **Anti-cheat gates:** caching, token counts, output length, rare tokens, sampling probes, prompt rendering, speculative-decoding exactness.
 - **Quality checks:** reference quality and GSM8K for language models; latent and final-clip checks for video. Images and speech use client timing and structural checks plus an external semantic quality protocol; see [media benchmarks](https://github.com/KittenML/inferencekit/blob/main/docs/media-benchmarks.md).
 - **Budget control:** spending authorized up front, with hardware-hour, dollar and elapsed-time limits, or explicitly uncapped spending with a finite deadline. No repeated plan approval inside the agreed scope.
