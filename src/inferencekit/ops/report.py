@@ -71,6 +71,11 @@ def claims_of(rec: dict, expect: str, integrity: dict) -> list[dict]:
                     out.append({"source": eid, "claim": f"{arm} speech latency and streaming SLOs",
                                 "verdict": timing if timing in ("PASS", "FAIL") else "UNPROVEN",
                                 "reason": "Absolute first-audio, RTF and underrun limits from the source benchmark."})
+    elif kind == "audio_benchmark" and data.get("source") == "import audio":
+        out.append({"source": eid, "claim": "complete imported PCM", "verdict": data["structural_verdict"],
+                    "reason": "PCM format, frame alignment and fixture coverage."})
+        out.append({"source": eid, "claim": "speech timing", "verdict": "NOT RUN",
+                    "reason": "This operation imports saved output for quality evaluation."})
     elif kind in ("image_benchmark", "audio_benchmark"):
         validity = data.get("claim_validity") or {}
         structure = "PASS" if validity.get("valid") is True else "FAIL" if validity.get("valid") is False else "UNPROVEN"
@@ -84,6 +89,13 @@ def claims_of(rec: dict, expect: str, integrity: dict) -> list[dict]:
         out.append({"source": eid, "claim": "media quality and usability",
                     "verdict": "UNPROVEN", "reason": "Timing and structural checks do not establish image quality, "
                     "speech intelligibility, speaker fidelity or repeated-run reliability; cite task-specific quality evidence."})
+    elif kind == "audio_capacity":
+        out.append({"source": eid, "claim": "on-device speech capacity under the registered SLOs",
+                    "verdict": data.get("verdict", "UNPROVEN"),
+                    "reason": f"Highest passing tested level: {data.get('highest_passing_tested')}. "
+                    "Open-loop burst arrivals with simulated zero-prebuffer playback."})
+        out.append({"source": eid, "claim": "speech quality and process isolation", "verdict": "UNPROVEN",
+                    "reason": "The timing import requires separate verification of the capture and outputs."})
     elif kind == "quality_audio":
         from inferencekit.ops.quality_audio import report_verdict
 
@@ -149,6 +161,7 @@ def environment_rows(recs: list[dict]) -> list[dict]:
     for i, memory in identities:
         g, e, m, w = i.get("gpu", {}), i.get("engine", {}), i.get("model", {}), i.get("workload", {})
         cpu = i.get("cpu") or {}
+        device = i.get("device") or {}
         gpu = g.get("name") or "?"
         gpu_label = f"{g['count']}x {gpu}" if g.get("count") else gpu
         tuning = (e.get("flags") or {}).get("server_env")
@@ -166,8 +179,9 @@ def environment_rows(recs: list[dict]) -> list[dict]:
                 qualifiers.append("partial" if measurement.get("complete") is False else "coverage unknown")
             memory_parts.append(f"{name}: {_fmt(measurement.get('value'))} MiB" +
                                 (" (" + "; ".join(qualifiers) + ")" if qualifiers else ""))
-        row = {"gpu": gpu_label, "hardware": "CPU: " + (cpu.get("model") or "unknown") if cpu else gpu_label,
-               "driver / CUDA": "n/a" if cpu else f"{g.get('driver') or '?'} / {g.get('cuda') or '?'}",
+        hardware = device.get("name") or ("CPU: " + (cpu.get("model") or "unknown") if cpu else gpu_label)
+        row = {"gpu": gpu_label, "hardware": hardware,
+               "driver / CUDA": "n/a" if cpu or device else f"{g.get('driver') or '?'} / {g.get('cuda') or '?'}",
                "clocks": g.get("clocks") or "?",
                "engine": " ".join(str(x) for x in (e.get("name"), e.get("version")) if x) or "-",
                "model": " ".join(str(x) for x in (m.get("id"), m.get("dtype"), m.get("quant")) if x) or "-",

@@ -53,7 +53,7 @@ KINDS = KINDS_V1 + ("serve_benchmark", "capacity", "gates", "quality_trajectory"
 KINDS += ("clip_benchmark", "clip_gates", "clip_quality", "clip_steps")
 # Client-timed images and speech. Structural validity never establishes semantic quality.
 KINDS += ("image_benchmark", "audio_benchmark", "rocprof_capture", "rocprof_summary")
-KINDS += ("quality_audio",)
+KINDS += ("quality_audio", "audio_capacity")
 # identity.workload fields: the v1 four are always present (null when unknown); the v2 serving fields
 # are written only when the operation knows them.
 WORKLOAD_V1 = ("prompt_len", "gen_len", "batch", "seed")
@@ -91,7 +91,7 @@ def metric(name: str, value: float | int | None, unit: str, stat: str, n: int | 
 
 
 def identity(gpu: dict | None = None, engine: dict | None = None, model: dict | None = None,
-             workload: dict | None = None, cpu: dict | None = None) -> dict:
+             workload: dict | None = None, cpu: dict | None = None, device: dict | None = None) -> dict:
     """The four things a number depends on. Unknown fields are null, never guessed."""
     g = {"name": None, "count": None, "driver": None, "cuda": None, "clocks": None}
     e = {"name": None, "version": None, "commit": None, "flags": {}}
@@ -108,6 +108,8 @@ def identity(gpu: dict | None = None, engine: dict | None = None, model: dict | 
     if cpu is not None:
         result["cpu"] = {k: cpu.get(k) for k in ("model", "architecture", "logical_cores", "physical_cores",
                                                "allowed_cpus", "topology_sha256")}
+    if device is not None:
+        result["device"] = {k: device.get(k) for k in ("class", "name")}
     return result
 
 

@@ -16,7 +16,7 @@ from inferencekit.registry import OpError
 from inferencekit.serve import resources, round_evidence, rounds as rr, servers
 
 METRICS = {
-    "audio": {"audio_ms": "ms", "first_audio_p95_ms": "ms", "rtf": "x"},
+    "audio": {"audio_ms": "ms", "first_audio_p95_ms": "ms", "first_pcm_p95_ms": "ms", "rtf": "x"},
     "image": {"image_ms": "ms", "images_per_hour": "images/h"},
 }
 

@@ -50,6 +50,7 @@ Explicit session authorization persists. An approved finite-deadline run may spe
 NVIDIA is fully supported, and the only hardware inferencekit has been run on so far. On other hardware, the skills guide the same flow, and the CLI does less: [references/hardware.md](references/hardware.md) has the table.
 - **Hardware-neutral, not yet run off NVIDIA:** `bench rounds`, `bench serve`, `gates run` and quality (they talk HTTP to any OpenAI-compatible server), `roofline` with a numeric `--gpu-bw`, and the intake, manifest, ledger and report tools. Treat a first run there as a test.
 - **NOT RUN off NVIDIA:** `ceiling bw` and nsys/ncu captures. `doctor` records selected AMD DRM/rocminfo and Apple sysctl/system_profiler facts with a vendor profiling route; unknown details remain unknown. On AMD, `rocprof capture` and `rocprof analyze` create trace evidence with rocprofv3; device/version support must be checked. Use current official docs for unfamiliar tools and a vendor or STREAM-style bandwidth test. Captures made outside the CLI are vendor evidence files.
+- **Phone workloads:** [on-device speech](references/phones.md). Capture request timings on the device.
 - **Platform guides:** [AMD ROCm](references/amd-rocm.md), [x86 CPU](references/cpu.md), [Apple Silicon](references/apple-silicon.md), [Intel GPU and TPU](references/other-accelerators.md).
 
 ## Preflight checklist

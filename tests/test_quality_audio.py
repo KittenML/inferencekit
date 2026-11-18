@@ -145,6 +145,17 @@ def quality(run, scores=None):
                   fixtures=str(fixtures), protocol=protocol["evidence_id"], scores=str(scores) if scores else None)
 
 
+@pytest.mark.parametrize("unstable", [False, True])
+def test_exact_quality_with_independent_aa_control(tmp_path, store, unstable):
+    fixtures, protocol, baseline, candidate = setup_run(tmp_path, store)
+    repeat = bench(store, fixtures, "baseline-repeat", different=unstable)
+    record = invoke("quality_audio", baseline=baseline["evidence_id"], candidate=candidate["evidence_id"],
+                    fixtures=str(fixtures), protocol=protocol["evidence_id"], baseline_repeat=repeat["evidence_id"])
+    result = record["data"]
+    assert result["checks"]["baseline_repeat"]["verdict"] == ("FAIL" if unstable else "PASS")
+    assert result["verdict"] == ("UNPROVEN" if unstable else "PASS")
+
+
 def test_parity_signed_stereo_and_no_truncation():
     a = struct.pack("<4h", -1000, 1000, -2000, 2000)
     b = struct.pack("<4h", -1001, 1001, -2002, 2002)
@@ -280,6 +291,14 @@ def test_cer_and_wer_outliers_are_corroborated_independently_without_selecting_b
 
     path = score_file(tmp_path, store, run, candidate_text=hallucination, retry_text=hallucination)
     assert quality(run, path)["data"]["checks"]["cer"]["verdict"] == "FAIL"
+
+
+def test_asr_only_policy_reuses_registered_wer_margin(tmp_path):
+    doc = json.loads(policy_file(tmp_path, "task_noninferiority").read_text())
+    doc["acceptance"] = "asr_noninferiority"
+    del doc["metrics"]["naturalness"]
+    del doc["scorers"]["naturalness"]
+    assert qa.validate_policy(doc)["acceptance"] == "asr_noninferiority"
 
 
 @pytest.mark.parametrize("mutation", ["missing_asr", "missing_task_metric", "missing_naturalness",

@@ -171,6 +171,25 @@ def test_capacity_lead_needs_an_slo_and_adds_load_mode():
                                           "unit": "streams/GPU", "buckets": list(intake.BUCKETS), "applies": True}
 
 
+def test_native_tts_capacity_has_speech_slos_and_device_identity():
+    data = base(modality="tts", hardware={"device": "Galaxy S25"}, budget={"approved": True},
+                workload={"client": "audio_capacity", "concurrency": [1, 2, 3]},
+                goals={"lead": "capacity", "slo": {"first_audio_p95_ms": 400, "rtf_p95": 1},
+                       "targets": {"n_star": 2, "audio_s_per_s": 1.5}})
+    result = intake.check(data)
+    assert result["derived"]["modes"] == ["audio_capacity"]
+    assert result["intake"]["goals"]["slo"]["max_underruns"] == 0
+    assert result["derived"]["targets"][0]["unit"] == "streams/device"
+    assert "galaxy-s25" in result["intake"]["run_id"]
+    data["workload"]["concurrency"] = [1, 3]
+    with pytest.raises(OpError, match="consecutive concurrency"):
+        intake.check(data)
+    data["workload"]["concurrency"] = [1, 2]
+    del data["goals"]["slo"]["rtf_p95"]
+    with pytest.raises(OpError, match="goals.slo.rtf_p95"):
+        intake.check(data)
+
+
 def test_ceiling_fraction_target_is_supported_and_warns_for_nvfp4():
     d = base(goals={"targets": {"decode_ceiling_fraction": 0.7, "buckets": ["short"]}})
     d["model"]["precision"] = "nvfp4"

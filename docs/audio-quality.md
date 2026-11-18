@@ -7,6 +7,7 @@ The acceptance policy is explicit:
 | Policy | Required evidence | Meaning of PASS |
 |---|---|---|
 | `exact` | Identical PCM, frame counts, rate and channels | Preservation of the named baseline outputs |
+| `asr_noninferiority` | Paired WER and/or CER | Noninferiority under the registered ASR metrics |
 | `task_noninferiority` | Paired WER/CER and predicted naturalness; optional speaker metric | Noninferiority under the registered task/proxy metrics |
 | `perceptual_and_task_noninferiority` | Task metrics plus blinded, paired listening ratings | Noninferiority under the registered task and listening protocol |
 
@@ -124,3 +125,9 @@ For WER/CER the worse-direction difference is candidate minus baseline; for larg
 SNR is `10*log10(sum(baseline²)/sum((baseline-candidate)²))`; maxabs is the largest signed-sample difference divided by 32768. Both use unmodified, aligned PCM. Unequal lengths have no SNR/maxabs value. Identical PCM has `snr_status: "identical"` and a null numeric SNR, avoiding a fabricated finite or nonfinite JSON value.
 
 The retained `audio_score.json` lists per-pair parity, source IDs, policy, coverage and checks; `imported_scores.json` retains external observations. Report comparison quality can use only evidence bound to its exact baseline/candidate IDs. Proxy acceptance remains labelled as such; missing/changed observations become UNPROVEN, previous FAIL records remain visible, and lifecycle/reliability requirements are not satisfied by quality evidence.
+
+For an independent exact PCM control, pass the repeat baseline capture with `--baseline-repeat` to `quality audio`. An unstable or incomplete A/A comparison leaves the candidate’s exactness unproven.
+
+## Import native PCM
+
+Run `inferencekit import audio --help` for the saved WAV or PCM import. Match the synthesis settings and seed base across arms, then pass the evidence IDs to `quality audio`. The import retains PCM and declared provenance for quality and carries no timing measurements. Use a policy registered before the declared capture start for an acceptance verdict.

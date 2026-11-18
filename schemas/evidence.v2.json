@@ -51,6 +51,7 @@
         "clip_steps",
         "image_benchmark",
         "audio_benchmark",
+        "audio_capacity",
         "quality_audio",
         "rocprof_capture",
         "rocprof_summary"
@@ -78,6 +79,15 @@
         "workload"
       ],
       "properties": {
+        "device": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["class", "name"],
+          "properties": {
+            "class": {"enum": ["mobile"]},
+            "name": {"type": "string", "minLength": 1}
+          }
+        },
         "cpu": {
           "type": "object", "additionalProperties": false,
           "properties": {

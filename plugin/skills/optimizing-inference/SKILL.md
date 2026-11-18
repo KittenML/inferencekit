@@ -57,7 +57,7 @@ Use [researching-optimizations](../researching-optimizations/SKILL.md) now, from
 
 Run `inferencekit doctor`. Check competing work, memory, swap, thermals and profiler permissions before occupying the device. Stop only the run's own jobs; do not kill unrelated services to obtain a clean measurement.
 
-On NVIDIA, measured `ceiling bw` and `roofline` inform supported text models. Elsewhere use the [hardware route](../inference-triage/references/hardware.md) and vendor measurements; a PyTorch CUDA namespace does not establish NVIDIA-tool support. For non-token workloads derive bytes/FLOPs per request or step with assumptions. Unsupported ceilings stay NOT RUN.
+On NVIDIA, measured `ceiling bw` and `roofline` inform supported text models. Elsewhere use the [hardware route](../inference-triage/references/hardware.md) and vendor measurements; a PyTorch CUDA namespace does not establish NVIDIA-tool support. For [phones](../inference-triage/references/phones.md), capture the SoC, OS, runtime placement and thermal state on-device and use its supported timers. For non-token workloads derive bytes/FLOPs per request or step with assumptions. Unsupported ceilings stay NOT RUN.
 
 Estimate critical-path share, attainable efficiency, exact byte savings and permitted algorithmic savings ([ceilings.md](references/ceilings.md), [stop-point.md](references/stop-point.md)). Recompute after changing precision or work. An inferred ceiling orders experiments; it cannot establish a speedup.
 
@@ -71,7 +71,7 @@ For text, a fixed baseline with route build may skip the survey and use the [eng
 
 ## 4. Screen and measure
 
-Use [harness-commands.md](references/harness-commands.md) for text, [affordability.md](references/affordability.md) for image/audio and [video.md](references/video.md) for video. Screen representative cases before full rounds. Text screens include `short` and `long` lengths. Promote secondary wins the user values without hiding the lead metric.
+For phone speech concurrency use the [on-device speech capacity protocol](../inference-triage/references/phones.md). Use [harness-commands.md](references/harness-commands.md) for text, [affordability.md](references/affordability.md) for image/audio and [video.md](references/video.md) for video. Screen representative cases before full rounds. Text screens include `short` and `long` lengths. Promote secondary wins the user values without hiding the lead metric.
 
 Final comparisons use balanced fresh-process rounds, excluded warmup, registered stopping and confidence intervals. Include complete output work and transfers/synchronization/decoding. [Capacity](references/capacity.md) needs its own tuning and measured concurrency.
 

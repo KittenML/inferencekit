@@ -37,6 +37,9 @@ MAX_PLUGIN_BYTES = 730_000  # context guard for skills, references and scripts
 VIDEO_REFERENCES = (PLUGIN / "skills" / "optimizing-inference" / "references" / "video.md",
                     PLUGIN / "skills" / "benchmarking" / "references" / "video-checks.md")
 MAX_VIDEO_REFERENCE_BYTES = 16_000
+# The on-device protocol is loaded only for phone workloads.
+PHONE_REFERENCE = SKILLS / "inference-triage" / "references" / "phones.md"
+MAX_PHONE_REFERENCE_BYTES = 4_000
 # Loaded only after the final report or for an explicit contribution request; keep
 # publication details out of the optimization context while bounding this reference.
 CONTRIBUTION_REFERENCE = PLUGIN / "skills" / "optimizing-inference" / "references" / "engine-contribution.md"
@@ -180,10 +183,12 @@ def test_file_sizes_bounded():
     skel = sum(p.stat().st_size for p in files if SKELETON in p.parents)
     video = sum(p.stat().st_size for p in VIDEO_REFERENCES)
     contribution = CONTRIBUTION_REFERENCE.stat().st_size
-    total = sum(p.stat().st_size for p in files) - skel - video - contribution
+    phone = PHONE_REFERENCE.stat().st_size
+    total = sum(p.stat().st_size for p in files) - skel - video - contribution - phone
     assert total <= MAX_PLUGIN_BYTES, f"plugin/ (without the skeleton and separately capped references) is {total} bytes"
     assert skel <= MAX_SKELETON_BYTES, f"the engine skeleton is {skel} bytes"
     assert video <= MAX_VIDEO_REFERENCE_BYTES, f"the video references are {video} bytes"
+    assert phone <= MAX_PHONE_REFERENCE_BYTES, f"the phone reference is {phone} bytes"
     assert contribution <= MAX_CONTRIBUTION_REFERENCE_BYTES, f"the contribution reference is {contribution} bytes"
 
 
@@ -313,7 +318,8 @@ def test_unprefixed_command_spans_exist():
     for md in AGENT_MD:
         for ln, snippet in _code_snippets(md):
             m = re.match(r"^(?:\$IK\s+)?([a-z]+)[ \t]+([a-z][a-z0-9-]*)(\s.*)?$", _strip_quoted_args(snippet.strip()))
-            if not m or m.group(1) not in GROUPS - RAW_TOOLS:
+            # Require the CLI prefix for import, which is also a Python statement.
+            if not m or m.group(1) not in GROUPS - RAW_TOOLS - {"import"}:
                 continue
             cmd = (m.group(1), m.group(2))
             if cmd not in CLI:

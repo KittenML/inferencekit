@@ -13,6 +13,8 @@ Choose the workload before the metric: complete-request latency, sustained throu
 
 `bench rounds --mode audio|image|clip` runs fresh-process media comparisons; CPU manifests use `hardware.backend: cpu` for a CPU lock and process-group telemetry. Compare the final evidence ID for each engine in the run plan; [media contracts and round scheduling](https://github.com/KittenML/inferencekit/blob/main/docs/media-benchmarks.md).
 
+For native phone speech, use [on-device speech](../inference-triage/references/phones.md) to import first audio, RTF, underruns and throughput under concurrent open-loop load.
+
 Speed numbers that survive review: a timer outside the engine, one precision for every engine, settings proven in effect, warm engines, fresh-process rounds in a balanced order, confidence intervals, a speed-of-light ceiling and anti-cheat gates. [optimizing-inference](../optimizing-inference/SKILL.md) calls this skill.
 
 **Use** for latency and tok/s per input bucket, capacity (`N*` within an SLO, goodput, $/1M tokens), comparisons of engines, configs or builds, and any reported number. A change-loop step needs only a screen; the full protocol is for milestones (fixed rounds: [references/statistics.md](references/statistics.md)) and anything published ([optimizing-kernels](../optimizing-kernels/SKILL.md), "Checks"). **Not** for *why* it is slow ([profiling](../profiling/SKILL.md)), nor while builds' outputs differ unchecked ([proving-correctness](../proving-correctness/SKILL.md) first).

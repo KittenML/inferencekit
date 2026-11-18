@@ -59,6 +59,7 @@ TARGETS = {
     "decode_tok_s": ("higher", "tok/s"),
     "ttft_ms": ("lower", "ms"),
     "n_star": ("higher", "streams/GPU"),
+    "audio_s_per_s": ("higher", "audio s/s"),
     "decode_ceiling_fraction": ("higher", "fraction of roofline ceiling"),
     "ttfa_ms": ("lower", "ms"),
     "ttfa_p95_ms": ("lower", "ms"),
@@ -71,7 +72,7 @@ TARGETS = {
 }
 MODALITY_TARGETS = {
     "llm": {"decode_tok_s", "ttft_ms", "n_star", "decode_ceiling_fraction", "usd_per_1m"},
-    "tts": {"ttfa_ms", "ttfa_p95_ms", "rtf", "n_star", "usd_per_1m"},
+    "tts": {"ttfa_ms", "ttfa_p95_ms", "rtf", "n_star", "audio_s_per_s", "usd_per_1m"},
     "stt": {"rtf", "n_star", "usd_per_1m"},
     "video": {"clip_ms", "clips_per_hour"},
     "image": {"image_ms", "images_per_hour"},
@@ -296,6 +297,7 @@ def normalize(data: dict) -> tuple[dict, list[str], list[str]]:
 
     hw = d["hardware"]
     hw.setdefault("count", 1)
+    hardware_label = hw.get("device") or hw.get("gpu")
     access = hw.setdefault("access", {"kind": "local"})
     if access.get("kind") == "ssh":
         access.setdefault("port", 22)
@@ -323,7 +325,15 @@ def normalize(data: dict) -> tuple[dict, list[str], list[str]]:
         warnings.append(f"goals.targets {bad} do not apply to modality {modality} "
                         f"(use {sorted(MODALITY_TARGETS[modality])}); they are reported NOT RUN")
     needs_load = goals["lead"] == "capacity" or "n_star" in targets
-    if needs_load and "ttft_p95_ms" not in slo:
+    if needs_load and modality == "tts":
+        audio_slo = {"first_audio_p95_ms", "rtf_p95"}
+        if audio_slo <= set(slo):
+            slo.setdefault("max_underruns", 0)
+        elif "ttft_p95_ms" in slo and not audio_slo.intersection(slo) and d.get("workload", {}).get("client") != "audio_capacity":
+            warnings.append("Legacy TTS first-token SLO retained. Speech capacity needs first_audio_p95_ms and rtf_p95.")
+        else:
+            errors.append("TTS capacity requires goals.slo.first_audio_p95_ms and goals.slo.rtf_p95")
+    elif needs_load and "ttft_p95_ms" not in slo:
         errors.append("goals.slo.ttft_p95_ms is required when the lead goal is capacity or a target is n_star "
                       "(N* is defined by the SLO)")
     if needs_load and modality == "llm" and "tpot_p95_ms" not in slo:
@@ -385,12 +395,19 @@ def normalize(data: dict) -> tuple[dict, list[str], list[str]]:
     wl.setdefault("rounds", 5)
     client = wl.get("client")
     expected_client = {"llm": "bench_serve", "tts": "bench_audio", "image": "bench_image", "video": "bench_clip"}
-    if client is not None and client not in ("external", expected_client.get(modality)):
+    allowed_clients = {None, "external", expected_client.get(modality)}
+    if modality == "tts":
+        allowed_clients.add("audio_capacity")
+        if client == "audio_capacity" and (slo.get("max_underruns", 0) != 0 or slo["max_fail"] != 0):
+            errors.append("workload.client audio_capacity requires zero failures and zero underruns")
+    if client not in allowed_clients:
         errors.append(f"workload.client {client!r} does not support modality {modality}")
     if needs_load:
-        wl.setdefault("concurrency", list(DEFAULT_CONCURRENCY))
+        wl.setdefault("concurrency", list(range(1, 9)) if client == "audio_capacity" else list(DEFAULT_CONCURRENCY))
     if "concurrency" in wl:
         wl["concurrency"] = sorted(set(wl["concurrency"]))
+        if client == "audio_capacity" and wl["concurrency"] != list(range(1, len(wl["concurrency"]) + 1)):
+            errors.append("workload.client audio_capacity requires consecutive concurrency levels starting at 1")
 
     budget = d.setdefault("budget", {})
     budget.setdefault("approved", False)
@@ -444,7 +461,7 @@ def normalize(data: dict) -> tuple[dict, list[str], list[str]]:
             warnings.append("repo.path missing: interactive runs ask which repo to use; non_interactive runs skip "
                             "the ledger (NOT RUN)")
         repo.setdefault("push", "ask")
-        repo.setdefault("branch", f"perf/{_slug(model['id'].split('/')[-1])}-{_slug(hw['gpu'])}")
+        repo.setdefault("branch", f"perf/{_slug(model['id'].split('/')[-1])}-{_slug(hardware_label)}")
     else:
         d["repo"] = None
         warnings.append("repo missing: kept changes are not committed; the commit ledger is NOT RUN")
@@ -554,7 +571,7 @@ def normalize(data: dict) -> tuple[dict, list[str], list[str]]:
     cands.setdefault("exclude", [])
     cands.setdefault("max_engines", 5)
     if modality in ("tts", "stt") and client is None:
-        hint = "configure workload.client: bench_audio for speech synthesis, or external" if modality == "tts" else "configure workload.client: external for speech recognition"
+        hint = "configure workload.client: bench_audio or audio_capacity for speech synthesis, or external" if modality == "tts" else "configure workload.client: external for speech recognition"
         warnings.append(f"modality {modality}: no audio timing client is configured; {hint}. "
                         "Audio latency claims without a matching client are UNPROVEN")
     if modality == "tts" and client == "bench_audio":
@@ -570,7 +587,7 @@ def normalize(data: dict) -> tuple[dict, list[str], list[str]]:
     d["intake_version"] = 1
     if not d.get("run_id"):
         stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M")
-        d["run_id"] = f"{_slug(model['id'].split('/')[-1])}-{_slug(hw['gpu'])}-{stamp}"
+        d["run_id"] = f"{_slug(model['id'].split('/')[-1])}-{_slug(hardware_label)}-{stamp}"
     return d, errors, warnings
 
 
@@ -753,7 +770,8 @@ def derive(intake: dict) -> dict:
     goals, targets = intake["goals"], intake["goals"]["targets"]
     named = [k for k in targets if k != "buckets"]
     video = intake["modality"] in ("image", "video")
-    target_rows = [{"name": k, "value": targets[k], "better": TARGETS[k][0], "unit": TARGETS[k][1],
+    target_rows = [{"name": k, "value": targets[k], "better": TARGETS[k][0],
+                    "unit": "streams/device" if k == "n_star" and intake["hardware"].get("device") else TARGETS[k][1],
                     "buckets": ["all"] if video else targets.get("buckets", intake["buckets"]),
                     "applies": k in MODALITY_TARGETS[intake["modality"]]} for k in named]
     ni = intake["non_interactive"]
@@ -789,6 +807,8 @@ def derive(intake: dict) -> dict:
         modes = ["image"]
     if intake["modality"] == "tts" and intake["workload"].get("client") == "bench_audio":
         modes = ["audio"]
+    if intake["modality"] == "tts" and intake["workload"].get("client") == "audio_capacity":
+        modes = ["audio_capacity"]
     if intake["modality"] == "video":
         modes = ["clip"]  # bench rounds --mode clip: one clip at a time
     questions = []
