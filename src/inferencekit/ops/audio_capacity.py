@@ -30,6 +30,7 @@ ARGS = (
     Arg("hardware_name", "string", "Measured device model, SoC and OS.", required=True),
     Arg("model_dtype", "string", "Weights and compute precision."),
     Arg("slo_first_audio_p95_ms", "number", "Simulated first nonzero playback onset p95 per stream.", default=400.0),
+    Arg("first_audio_as_metric", "boolean", "Measure first audio without applying a first-audio SLO.", default=False),
     Arg("slo_rtf_p95", "number", "Complete-response real-time factor p95 per stream.", default=1.0),
 )
 
@@ -136,8 +137,8 @@ def summarize_cell(cell, level, plan, first_audio_ms, rtf):
     period = plan["period_ms"]
     overruns = sum(r["complete_ms"] > period for _, _, r in valid)
     failed = len(cell) - len(valid)
-    slo_missed = any(r["requests"] and (r["first_audio_p95_ms"] > first_audio_ms or r["rtf_p95"] > rtf)
-                     for r in streams)
+    slo_missed = any(r["requests"] and (r["rtf_p95"] > rtf or (
+        first_audio_ms is not None and r["first_audio_p95_ms"] > first_audio_ms)) for r in streams)
     verdict = "UNPROVEN" if len(cell) < count else ("FAIL" if failed or und or overruns or slo_missed else "PASS")
     finish = max((wave * period + r["complete_ms"] for wave, _, r in valid), default=0)
     observation_ms = max(plan["waves"] * period, finish)
@@ -149,9 +150,12 @@ def summarize_cell(cell, level, plan, first_audio_ms, rtf):
 @operation("import_audio_capacity", ("import", "audio-capacity"),
            "Derive speech capacity and audio throughput from a client-timed open-loop capture.", ARGS)
 def import_audio_capacity(call, timings, plan, fixtures, label, model, model_revision, engine_version, hardware_name,
-                          model_dtype, slo_first_audio_p95_ms, slo_rtf_p95):
-    slo = {"first_audio_p95_ms": slo_first_audio_p95_ms, "rtf_p95": slo_rtf_p95, "underruns": 0}
-    if any(not finite(v) or v <= 0 for v in (slo_first_audio_p95_ms, slo_rtf_p95)):
+                          model_dtype, slo_first_audio_p95_ms, slo_rtf_p95, first_audio_as_metric=False):
+    slo = {"rtf_p95": slo_rtf_p95, "underruns": 0}
+    if not first_audio_as_metric:
+        slo["first_audio_p95_ms"] = slo_first_audio_p95_ms
+    active_limits = [value for name, value in slo.items() if name != "underruns"]
+    if any(not finite(v) or v <= 0 for v in active_limits):
         raise OpError("audio capacity SLOs must be finite and positive")
     for value in (label, model, model_revision, engine_version, hardware_name, model_dtype):
         if value is not None and (not value.strip() or ev.redact(value) != value):
@@ -167,7 +171,7 @@ def import_audio_capacity(call, timings, plan, fixtures, label, model, model_rev
     cells = read_timings(timings, plan_doc)
     levels, highest, metrics = [], None, []
     for level in plan_doc["levels"]:
-        rounds = [summarize_cell(cells[level, index], level, plan_doc, slo_first_audio_p95_ms, slo_rtf_p95)
+        rounds = [summarize_cell(cells[level, index], level, plan_doc, slo.get("first_audio_p95_ms"), slo_rtf_p95)
                   for index in range(plan_doc["rounds"])]
         statuses = {row["verdict"] for row in rounds}
         verdict = "UNPROVEN" if "UNPROVEN" in statuses else ("FAIL" if "FAIL" in statuses else "PASS")

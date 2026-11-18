@@ -374,8 +374,11 @@ def speech_trailers(builder, recs):
         level, source = data.get("n_star"), [record.get("evidence_id")]
         if level is not None:
             slo = data["slo"]
-            value = (f"{num(level)} streams (per-stream p95 first audio <= {num(slo['first_audio_p95_ms'])} ms, "
-                     f"p95 RTF <= {num(slo['rtf_p95'])}, zero underruns)")
+            limits = []
+            if slo.get("first_audio_p95_ms") is not None:
+                limits.append(f"p95 first audio <= {num(slo['first_audio_p95_ms'])} ms")
+            limits.extend((f"p95 RTF <= {num(slo['rtf_p95'])}", "zero underruns"))
+            value = f"{num(level)} streams (per stream: {', '.join(limits)})"
             builder.add("Perf-Speech-Capacity-N", value, "derived", source)
         subject = f"concurrency {level or data.get('highest_passing_tested')}"
         metric = next((m for m in record.get("metrics", []) if m["name"] == "audio_s_per_s"

@@ -47,6 +47,31 @@ def test_capacity_checks_every_stream_and_window(tmp_path, store):
     assert failing["rounds"][0]["streams"][1]["first_audio_p95_ms"] == 470
 
 
+def test_first_audio_can_be_measured_without_a_capacity_gate(tmp_path, store):
+    args = capture(tmp_path)
+    record = call("import_audio_capacity", {**args, "first_audio_as_metric": True})
+    assert ev.validate(record) == []
+    data = record["data"]
+    assert data["slo"] == {"rtf_p95": 1.0, "underruns": 0}
+    assert data["highest_passing_tested"] == 2
+    assert data["n_star"] is None
+    assert data["levels"][1]["rounds"][0]["streams"][1]["first_audio_p95_ms"] == 470
+
+    def overload(rows):
+        for row in rows:
+            if row["concurrency"] == 2:
+                row["complete_ms"] = 1200
+        return rows
+
+    args = capture(tmp_path, overload)
+    record = call("import_audio_capacity", {**args, "first_audio_as_metric": True})
+    assert record["data"]["n_star"] == 1
+    trailers = call("ledger_trailers", {"ids": [record["evidence_id"]], "format": "json"})
+    capacity = next(item for item in trailers["trailers"] if item["key"] == "Perf-Speech-Capacity-N")
+    assert "first audio" not in str(capacity)
+    assert "p95 RTF <= 1" in str(capacity)
+
+
 def test_missing_rows_cannot_establish_capacity(tmp_path, store):
     record = call("import_audio_capacity", capture(tmp_path, lambda rows: rows[:-1]))
     assert record["data"]["n_star"] is None
@@ -60,7 +85,7 @@ def test_detects_underruns_despite_good_real_time_factor(tmp_path, store):
         rows[0]["complete_ms"] = 700
         return rows
 
-    record = call("import_audio_capacity", capture(tmp_path, delay))
+    record = call("import_audio_capacity", {**capture(tmp_path, delay), "first_audio_as_metric": True})
     assert record["data"]["n_star"] == 0
     assert record["data"]["levels"][0]["rounds"][0]["underruns"] == 1
 

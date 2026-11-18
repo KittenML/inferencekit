@@ -203,6 +203,14 @@ def test_native_tts_capacity_has_speech_slos_and_device_identity():
         intake.check(data)
 
 
+def test_native_tts_realtime_capacity_does_not_need_a_first_audio_gate():
+    data = base(modality="tts", hardware={"device": "Galaxy S25"}, budget={"approved": True},
+                workload={"client": "audio_capacity"},
+                goals={"lead": "capacity", "slo": {"rtf_p95": 1}})
+    result = intake.check(data)
+    assert result["intake"]["goals"]["slo"] == {"rtf_p95": 1, "max_underruns": 0, "max_fail": 0}
+
+
 def test_ceiling_fraction_target_is_supported_and_warns_for_nvfp4():
     d = base(goals={"targets": {"decode_ceiling_fraction": 0.7, "buckets": ["short"]}})
     d["model"]["precision"] = "nvfp4"

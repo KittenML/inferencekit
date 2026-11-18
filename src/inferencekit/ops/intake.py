@@ -327,12 +327,12 @@ def normalize(data: dict) -> tuple[dict, list[str], list[str]]:
     needs_load = goals["lead"] == "capacity" or "n_star" in targets
     if needs_load and modality == "tts":
         audio_slo = {"first_audio_p95_ms", "rtf_p95"}
-        if audio_slo <= set(slo):
+        if "rtf_p95" in slo:
             slo.setdefault("max_underruns", 0)
         elif "ttft_p95_ms" in slo and not audio_slo.intersection(slo) and d.get("workload", {}).get("client") != "audio_capacity":
-            warnings.append("Legacy TTS first-token SLO retained. Speech capacity needs first_audio_p95_ms and rtf_p95.")
+            warnings.append("Legacy TTS first-token SLO retained. Speech capacity needs rtf_p95.")
         else:
-            errors.append("TTS capacity requires goals.slo.first_audio_p95_ms and goals.slo.rtf_p95")
+            errors.append("TTS capacity requires goals.slo.rtf_p95")
     elif needs_load and "ttft_p95_ms" not in slo:
         errors.append("goals.slo.ttft_p95_ms is required when the lead goal is capacity or a target is n_star "
                       "(N* is defined by the SLO)")
