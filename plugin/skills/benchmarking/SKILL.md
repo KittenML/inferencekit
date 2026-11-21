@@ -13,9 +13,11 @@ Choose the workload before the metric: complete-request latency, sustained throu
 
 `bench rounds --mode audio|image|clip` runs fresh-process media comparisons; CPU manifests use `hardware.backend: cpu` for a CPU lock and process-group telemetry. Compare the final evidence ID for each engine in the run plan; [media contracts and round scheduling](https://github.com/KittenML/inferencekit/blob/main/docs/media-benchmarks.md).
 
+For native phone speech, use [on-device speech](../inference-triage/references/phones.md) to import first audio, RTF, underruns and throughput under concurrent open-loop load.
+
 Speed numbers that survive review: a timer outside the engine, one precision for every engine, settings proven in effect, warm engines, fresh-process rounds in a balanced order, confidence intervals, a speed-of-light ceiling and anti-cheat gates. [optimizing-inference](../optimizing-inference/SKILL.md) calls this skill.
 
-**Use** for latency and tok/s per input bucket, capacity (`N*` within an SLO, goodput, $/1M tokens), comparisons of engines, configs or builds, and any reported number. A change-loop step needs only a screen; the full protocol is for milestones (fixed rounds: [references/statistics.md](references/statistics.md)) and anything published ([optimizing-kernels](../optimizing-kernels/SKILL.md), "Checks"). **Not** for *why* it is slow ([profiling](../profiling/SKILL.md)), nor while builds' outputs differ unchecked ([proving-correctness](../proving-correctness/SKILL.md) first).
+**Use** for latency and tok/s per input bucket, capacity (`N*` within an SLO, goodput, $/1M tokens), comparisons of engines, configs or builds, and any reported number. A change-loop step needs only a screen. The full protocol is for milestones (fixed rounds: [references/statistics.md](references/statistics.md)) and published results ([optimizing-kernels](../optimizing-kernels/SKILL.md), "Checks"). Use [profiling](../profiling/SKILL.md) to explain the cost and [proving-correctness](../proving-correctness/SKILL.md) to determine whether it qualifies as a speedup. Retain runnable timing rows even when outputs fail quality.
 
 **GPU approval:** benchmarks, `ceiling bw`, `--gpu-bw measure` and gates run only with `budget.approved: true` in `intake.yaml` or an explicit yes after you stated the cost (GPU, $/h x hours). Record who approved and when.
 
@@ -35,6 +37,7 @@ Speed numbers that survive review: a timer outside the engine, one precision for
 - [ ] Approval recorded; `inferencekit doctor` this session -> ev_env.
 - [ ] Nothing else on the GPU or host CPUs while timing (they shift latency by tens of percent); the client on pinned cores or another host.
 - [ ] Engines and model pinned in `runs/<id>/manifest.json`; `inferencekit manifest validate` passes.
+- [ ] Named official artifacts match the publisher's release and checksum. Record weight, activation and compute precision by stage, and the device placement actually observed in the runtime. Label community exports, local partial conversions and fallback runs explicitly.
 - [ ] Same precision (weights, activations, KV, lm_head) for every engine, or a numerics change the task allows, labelled "numerics changed"; the same sampling and seed for every engine (`--extra-body`: the workload's, else `generation_config.json` defaults); each baseline at its best documented config for the goal.
 - [ ] Prompt set verified (`inferencekit prompts verify --set <dev|path>`), identical for every engine.
 - [ ] Claim written first: metric, bucket, threshold, decision rule, round count R.

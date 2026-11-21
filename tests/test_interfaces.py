@@ -10,7 +10,7 @@ from inferencekit.evidence import set_default_root
 from inferencekit.mcp_server import fit
 from inferencekit.registry import OpError
 
-CONTRACT_TOOLS = {"doctor", "roofline", "measure_bandwidth", "bench_decode", "capture_nsys", "analyze_nsys",
+CONTRACT_TOOLS = {"import_audio", "import_audio_capacity", "doctor", "roofline", "measure_bandwidth", "bench_decode", "capture_nsys", "analyze_nsys",
                   "capture_ncu", "summarize_ncu", "compare", "check_correctness", "list_evidence",
                   "inspect_evidence", "report"}
 CONTRACT_TOOLS |= {"intake_template", "intake_validate", "intake_budget", "intake_resume"}  # intake

@@ -85,6 +85,8 @@ inferencekit quality audio --baseline BASELINE_ID --candidate CANDIDATE_ID \
 inferencekit report COMPARISON_ID QUALITY_ID --format md
 ```
 
+Set UTMOSv2 `min_tail_seconds` to merge a shorter trailing window into its preceding window. An out-of-range score marks its utterance incomplete for naturalness and retains the other observations.
+
 The score file binds each observation to its source PCM, text, seed, fixture and round. Models are reused within a scoring invocation. Missing or failed observations cannot become a quality PASS. Keep the observations with the evidence; they contain transcripts and are not automatically safe to publish.
 
 ## Optional checks

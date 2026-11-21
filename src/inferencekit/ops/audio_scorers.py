@@ -84,8 +84,15 @@ def quality_audio_score(call, baseline, candidate, fixtures, protocol, config, o
         if not isinstance(rows, list) or len(rows) != len(jobs):
             raise OpError("audio scorer returned incomplete observations")
         required = ({"asr"} if "asr" in roles else set()) | ({"naturalness"} if "naturalness" in roles else set())
+        naturalness_errors = 0
         for row in rows:
-            if not isinstance(row, dict) or "error" in row or "listening" in row or not required.issubset(row):
+            if not isinstance(row, dict) or "listening" in row:
+                raise OpError("audio scorer returned invalid observations")
+            error = row.get("error")
+            missing = required - set(row)
+            if missing == {"naturalness"} and isinstance(error, dict) and error.get("naturalness") == "nonfinite_or_out_of_scale_score":
+                naturalness_errors += 1
+            elif missing or "error" in row:
                 raise OpError("audio scorer returned failed or incomplete observations")
             if "asr_retry" in roles and (not isinstance(row.get("asr"), dict) or "retry_text" not in row["asr"]):
                 raise OpError("audio scorer omitted registered ASR retry")
@@ -113,5 +120,6 @@ def quality_audio_score(call, baseline, candidate, fixtures, protocol, config, o
         finally:
             Path(staging_name).unlink(missing_ok=True)
     return {"format": qa.SCORES_FORMAT, "sha256": qa.sha(raw), "rows": len(rows),
-            "model_scorers": sorted(roles), "listening": "NOT RUN", "quality_verdict": "NOT RUN",
+            "model_scorers": sorted(roles), "naturalness_error_rows": naturalness_errors,
+            "listening": "NOT RUN", "quality_verdict": "NOT RUN",
             "next": "Import this file with quality audio --scores; model proxies do not establish listening quality."}

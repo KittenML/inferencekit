@@ -49,7 +49,7 @@ Use the derived run id; `--run-dir` pins the intake and starts the clock. SSH ru
 
 Validate [intake](references/intake.md); pin revision, component precisions, processing, dataset, shapes and output work. Derive workload details from examples/logs ([workload.md](references/workload.md)); record assumptions.
 
-Choose response latency, sustained throughput, peak memory or affordable hardware under a latency/quality limit ([affordability.md](references/affordability.md)). Token metrics and GSM8K belong to text workloads. Speech needs content, completion and speaker checks; images need semantic/visual checks; video needs temporal checks. Other architectures need a registered task-specific adapter and protocol; unsupported CLI modalities remain UNPROVEN rather than being relabelled as text.
+Choose response latency, sustained throughput, peak memory or affordable hardware under a latency/quality limit ([affordability.md](references/affordability.md)). Apply a requested [compute resource policy](references/resource-policy.md). Token metrics and GSM8K belong to text workloads. Speech needs content, completion and speaker checks; images need semantic/visual checks; video needs temporal checks. Other architectures need a registered task-specific adapter and protocol; unsupported CLI modalities remain UNPROVEN rather than being relabelled as text.
 
 Use [researching-optimizations](../researching-optimizations/SKILL.md) now, from the pinned model, shapes, hardware and runtime. It returns a short experiment queue, including existing engine paths to try before custom code.
 
@@ -57,7 +57,7 @@ Use [researching-optimizations](../researching-optimizations/SKILL.md) now, from
 
 Run `inferencekit doctor`. Check competing work, memory, swap, thermals and profiler permissions before occupying the device. Stop only the run's own jobs; do not kill unrelated services to obtain a clean measurement.
 
-On NVIDIA, measured `ceiling bw` and `roofline` inform supported text models. Elsewhere use the [hardware route](../inference-triage/references/hardware.md) and vendor measurements; a PyTorch CUDA namespace does not establish NVIDIA-tool support. For non-token workloads derive bytes/FLOPs per request or step with assumptions. Unsupported ceilings stay NOT RUN.
+On NVIDIA, measured `ceiling bw` and `roofline` inform supported text models. Elsewhere use the [hardware route](../inference-triage/references/hardware.md) and vendor measurements; a PyTorch CUDA namespace does not establish NVIDIA-tool support. For [phones](../inference-triage/references/phones.md), capture the SoC, OS, runtime placement and thermal state on-device and use its supported timers. For non-token workloads derive bytes/FLOPs per request or step with assumptions. Unsupported ceilings stay NOT RUN.
 
 Estimate critical-path share, attainable efficiency, exact byte savings and permitted algorithmic savings ([ceilings.md](references/ceilings.md), [stop-point.md](references/stop-point.md)). Recompute after changing precision or work. An inferred ceiling orders experiments; it cannot establish a speedup.
 
@@ -65,13 +65,17 @@ Estimate critical-path share, attainable efficiency, exact byte savings and perm
 
 Search the web at the start of each run for current engines and recipes for the exact model, hardware and goal; refresh when these or the runtime change. [candidates.md](references/candidates.md) gives examples, not a fixed list or count. Launch compatible engines in isolated environments; record sources, versions, commands, resolved configs and smoke results. NVIDIA graphs are not a generic launch flag for AMD or Apple.
 
-[Tune](references/tuning.md) supported engines for the goal. A task-fixed baseline is labelled fixed, never automatically best in the field. Reconsider numerical-only baseline rejects under a newly authorized lossy policy.
+[Tune](references/tuning.md) and measure at least three independent, widely used baseline engines on each target device before optimizing the candidate. Select the strongest eligible result for the stated goal. Multiple wrappers or settings for one underlying engine count as one engine. If fewer than three can run, record every attempted engine, timing and exact blocker. The baseline screen stays incomplete until the required coverage is reached. An explicitly fixed benchmark control can still be measured and labelled fixed.
 
-For text, a fixed baseline with route build may skip the survey and use the [engine skeleton](../optimizing-kernels/skeleton/README.md). Other models use their native pipeline and [custom-engine contract](references/candidates.md#custom-engine-contract), not the text skeleton.
+For build routes, text uses the [engine skeleton](../optimizing-kernels/skeleton/README.md). Other models use their native pipeline and [custom-engine contract](references/candidates.md#custom-engine-contract).
+
+For each baseline, verify the exact model artifact, publisher, revision and checksum. Record which stages and operations use each weight, activation and compute precision. Confirm device placement from runtime evidence and record any fallback. Distinguish the publisher's official artifact, a community export and a local conversion. A locally quantized MatMul path with FP32 convolutions is a mixed-precision configuration. It cannot stand in for an available official INT8 export with a different graph or coverage. Keep the published recipe result and time it on the same workload and timer before comparing it to a modified graph.
+
+In every experiment (quantisation, precision, activation bit-width, kernel or graph change, approximation, any optimisation), measure the speed of every variant even when its quality fails or is broken. Never skip, defer or drop a timing because quality broke. Record quality and speed side by side, and label a broken-quality row as such, but still time it. If a timing truly cannot run (the build is refused, or it crashes), report it as NOT RUN with the exact error, never "skipped because of quality". Pass this rule verbatim into every subagent and workflow brief.
 
 ## 4. Screen and measure
 
-Use [harness-commands.md](references/harness-commands.md) for text, [affordability.md](references/affordability.md) for image/audio and [video.md](references/video.md) for video. Screen representative cases before full rounds. Text screens include `short` and `long` lengths. Promote secondary wins the user values without hiding the lead metric.
+For phone speech concurrency use the [on-device speech capacity protocol](../inference-triage/references/phones.md). Use [harness-commands.md](references/harness-commands.md) for text, [affordability.md](references/affordability.md) for image/audio and [video.md](references/video.md) for video. Screen representative cases before full rounds. Text screens include `short` and `long` lengths. Promote secondary wins the user values without hiding the lead metric.
 
 Final comparisons use balanced fresh-process rounds, excluded warmup, registered stopping and confidence intervals. Include complete output work and transfers/synchronization/decoding. [Capacity](references/capacity.md) needs its own tuning and measured concurrency.
 

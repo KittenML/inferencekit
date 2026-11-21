@@ -57,16 +57,20 @@ def redact_outputs(staging: Path) -> None:
             Arg("trace", "string", "nsys -t value.", default="cuda,nvtx"),
             Arg("capture_range", "string", "Limit capture to cudaProfilerStart/Stop or an NVTX range.",
                 default="none", choices=("none", "cudaProfilerApi", "nvtx")),
+            Arg("capture_range_end", "string", "Optional end-of-range behavior; stop lets the target keep running.",
+                choices=("none", "stop", "stop-shutdown")),
             Arg("nvtx_capture", "string", "NVTX range name for capture_range=nvtx."),
             Arg("delay", "number", "Seconds to wait before collecting."),
             Arg("duration", "number", "Seconds to collect."),
             Arg("timeout", "integer", "Seconds before the run (and every process it started) is killed.",
                 default=3600)],
            passthrough=True)
-def capture_nsys(call, keep_env, trace, capture_range, nvtx_capture, delay, duration, timeout, argv):
+def capture_nsys(call, keep_env, trace, capture_range, nvtx_capture, delay, duration, timeout, argv, capture_range_end=None):
     nsys = require("nsys", "Install Nsight Systems (it ships with the CUDA toolkit).")
     if capture_range == "nvtx" and not nvtx_capture:
         raise OpError("capture_range=nvtx needs nvtx_capture=<range name>")
+    if capture_range_end is not None and capture_range == "none":
+        raise OpError("capture-range-end requires an active capture-range")
     env, env_names = clean_env(keep_env)  # raises on secret-looking names, before anything runs
     dropped = dropped_config_env(env)
     store = ev.Store()
@@ -76,6 +80,8 @@ def capture_nsys(call, keep_env, trace, capture_range, nvtx_capture, delay, dura
                "--force-overwrite", "true", "-o", str(base)]
         if capture_range != "none":
             cmd += ["--capture-range", capture_range]
+        if capture_range_end is not None:
+            cmd += ["--capture-range-end", capture_range_end]
         if nvtx_capture:
             cmd += ["--nvtx-capture", nvtx_capture]
         if delay:
@@ -104,11 +110,13 @@ def capture_nsys(call, keep_env, trace, capture_range, nvtx_capture, delay, dura
         record = ev.build(call, kind="nsys_capture", claim_class="observed", summary=summary,
                           identity_=ev.identity(gpu=gpu_identity()),
                           artifacts=[ev.artifact(rep, staging, "nsys_rep"), ev.artifact(sqlite, staging, "sqlite"),
-                                     ev.artifact(staging / "stderr.txt", staging, "stderr")],
+                                     ev.artifact(staging / "stderr.txt", staging, "stderr"),
+                                     ev.artifact(staging / "stdout.txt", staging, "stdout")],
                           missing=missing, limitations=limitations,
                           data={"nsys_version": tool_version("nsys"), "exit_code": r.returncode,
                                 "env_names": env_names, "env_dropped": dropped, "sqlite_scrubbed": scrubbed,
-                                "trace": trace, "cuda_graph_trace": "node", "capture_range": capture_range})
+                                "trace": trace, "cuda_graph_trace": "node", "capture_range": capture_range,
+                                "capture_range_end": capture_range_end})
         return store.save(record, staging)
 
 

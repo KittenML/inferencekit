@@ -315,14 +315,15 @@ def test_utmos_backbone_api_redirects_to_bound_local_assets(monkeypatch):
     assert timm.create_model is timm_create
 
 
-def test_utmos_predict_api_covers_tail_reuses_identical_windows_and_loads_once(tmp_path, monkeypatch):
+@pytest.mark.parametrize("score_tail", [4.0, 0.3])
+def test_utmos_predict_api_covers_tail_reuses_identical_windows_and_loads_once(tmp_path, monkeypatch, score_tail):
     calls = []
     class Predictor:
         def eval(self):
             calls.append(("eval", {}))
         def predict(self, **kwargs):
             calls.append(("predict", kwargs))
-            return [4.0] * len(kwargs["data"])
+            return [score_tail if len(audio) < 10 else 4.0 for audio in kwargs["data"]]
     def create(**kwargs):
         calls.append(("create", kwargs))
         return Predictor()
@@ -343,8 +344,13 @@ def test_utmos_predict_api_covers_tail_reuses_identical_windows_and_loads_once(t
     rows = [{}, {}]
     sc._naturalness(settings["scorers"]["naturalness"], settings, jobs, rows)
     assert rows[0] == rows[1]
-    assert rows[0]["naturalness"] == {"windows": [
-        {"start_frame": 0, "end_frame": 30, "score": 4.0}, {"start_frame": 30, "end_frame": 35, "score": 4.0}]}
+    if score_tail == 4.0:
+        assert rows[0]["naturalness"] == {"windows": [
+            {"start_frame": 0, "end_frame": 30, "score": 4.0}, {"start_frame": 30, "end_frame": 35, "score": 4.0}]}
+    else:
+        assert rows[0] == {"error": {"naturalness": "nonfinite_or_out_of_scale_score",
+                                    "windows": [{"start_frame": 30, "end_frame": 35}]}}
+    assert sc.windows(35, 10, 3, min_tail_seconds=1) == [(0, 35)]
     assert [name for name, _ in calls].count("create") == 1
     predictions = [kwargs for name, kwargs in calls if name == "predict"]
     assert len(predictions) == 2
