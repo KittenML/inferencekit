@@ -67,7 +67,7 @@ The ceiling moves: exact byte cuts lower bytes per token; speculation spreads a 
 
 ## Route: build or patch (stage 0; caps recorded at stage 7 entry)
 
-- **`single_user`, and a single-purpose engine is acceptable** (this model, this GPU, the [custom-engine contract](candidates.md#custom-engine-contract)): **build** a new engine from the [engine skeleton](../../optimizing-kernels/skeleton/README.md). A general server pays per-step costs (scheduler, batching, paging) a batch-1 engine does not need (inferred). The build route enters stage 7 right after stage 5 (when the task names the baseline, right after timing it: no engine survey or tuning); the tuned incumbent (or the task's baseline) stays the baseline (its speculative row: [speculative.md](speculative.md)), and the new engine pulls rungs 1, 3 and 5 itself.
+- **`single_user`, and a single-purpose engine is acceptable** (this model, this GPU, the [custom-engine contract](candidates.md#custom-engine-contract)): **build** a new engine from the [engine skeleton](../../optimizing-kernels/skeleton/README.md). A general server pays per-step costs (scheduler, batching, paging) a batch-1 engine does not need (inferred). Complete the three-engine baseline screen and select the tuned incumbent before building. Keep any task-named fixed control as a separate reference.
 - **`capacity`, or a general-purpose server required:** **patch** the best engine; the scheduler and batching are the work.
 - `route: build|patch` in `constraints` overrides. Record the route and both caps either way (patch ≈ 1 ÷ step-time share the incumbent keeps after the planned patches, from nsys; build = achievable combined headroom); switch only when measured caps clearly favour the other, and log why.
 

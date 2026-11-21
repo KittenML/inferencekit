@@ -1,8 +1,10 @@
 # Candidate engines
 
-Search the web before selecting baselines for each run: use the exact model/architecture, modality, precision, workload and hardware. Check current official releases, support tables, repositories and vendor/model recipes; follow benchmark claims to their configurations and measurement conditions. Discover applicable engines beyond the examples below. There is no fixed engine list or count.
+Search the web before selecting baselines for each run: use the exact model/architecture, modality, precision, workload and hardware. Check current official releases, support tables, repositories and vendor/model recipes. Follow benchmark claims to their configurations and measurement conditions. The examples below are starting points. Find and time at least three independent, widely used engines on the exact target device and tune each for the same goal before selecting the strongest baseline.
 
 Choose the strongest applicable candidates within the approved scope and budget. Record source URLs/access dates and reasons for exclusions or untested candidates in the existing research note. Recheck freshness and compatibility before reusing a previous survey. If web access is unavailable, state that current coverage is unverified; do not claim the latest or best current baseline.
+
+Include an eligible official model export when one exists for the requested precision and engine. Record origin, immutable revision, checksum, weight and activation precision by stage, and effective backend placement. Benchmark community and local exports as additional labelled configurations.
 
 **Verify each candidate by launching it** on the pinned local checkpoint, at its precision, with a smoke request, then tune and measure it. Web rankings do not prove which engine wins locally. Keep versions, workloads and quality checks pinned during each comparison. Flags move between releases: **the installed version's `--help` is the authority**, and the startup log is the proof.
 

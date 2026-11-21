@@ -37,6 +37,7 @@ Speed numbers that survive review: a timer outside the engine, one precision for
 - [ ] Approval recorded; `inferencekit doctor` this session -> ev_env.
 - [ ] Nothing else on the GPU or host CPUs while timing (they shift latency by tens of percent); the client on pinned cores or another host.
 - [ ] Engines and model pinned in `runs/<id>/manifest.json`; `inferencekit manifest validate` passes.
+- [ ] Named official artifacts match the publisher's release and checksum. Record weight, activation and compute precision by stage, and the device placement actually observed in the runtime. Label community exports, local partial conversions and fallback runs explicitly.
 - [ ] Same precision (weights, activations, KV, lm_head) for every engine, or a numerics change the task allows, labelled "numerics changed"; the same sampling and seed for every engine (`--extra-body`: the workload's, else `generation_config.json` defaults); each baseline at its best documented config for the goal.
 - [ ] Prompt set verified (`inferencekit prompts verify --set <dev|path>`), identical for every engine.
 - [ ] Claim written first: metric, bucket, threshold, decision rule, round count R.

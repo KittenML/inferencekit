@@ -76,7 +76,7 @@ constraints:
   3. Write the clock time and timezone in `budget.deadline` and the decision record.
   4. The deadline is the commitment, not the hour count: a cut under about 10% caused only by the approval wait needs no new question; a larger one changes what fits (show what moves to NOT RUN and ask again, [plan.md](plan.md) step 4). It never grows.
 - **It is one of the hour caps;** when it binds (`binding: wall_clock_h`), every stage's time box is a share of it, and the 10% report reserve means a report exists at the deadline.
-- **A short deadline** (below about 3 h; inferred from typical install, compile and rounds times): plan 2 engines and at most one capacity entry (the build route skips the survey and goes straight to stage 7). Say in the plan (or `state.decisions`) what the deadline makes NOT RUN.
+- **A short deadline** (below about 3 h; inferred from typical install, compile and rounds times): prioritize the three-engine baseline screen on the target device. Reduce optional capacity levels and candidate experiments before dropping baseline coverage. Record which measurements the deadline makes NOT RUN in the plan or `state.decisions`.
 - **Every stage:** `inferencekit intake budget runs/<run-id>`, obeyed; on `stage_over`, finish the current measurement, mark the rest NOT RUN, move on.
 
 ## The gap table (`REPORT.md`, section "Workload: real vs measured")
