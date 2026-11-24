@@ -50,11 +50,11 @@ from inferencekit.serve.round_evidence import MAX_ROUNDS, MAX_ROUND_INDEX, finit
 CLIP_METRICS = ("clip_ms", "clips_per_hour") + tuple(f"{m}_{t}" for t in CLIP_TASKS
                                                      for m in ("clip_ms", "clips_per_hour"))
 MEDIA_METRICS = {"image_benchmark": ("image_ms", "images_per_hour"),
-                 "audio_benchmark": ("audio_ms", "first_audio_p95_ms", "rtf")}
+                 "audio_benchmark": ("audio_ms", "first_audio_p95_ms", "first_pcm_p95_ms", "rtf")}
 HIGHER_IS_BETTER = {"decode_tok_s": True, "prefill_tok_s": True, "ttft_ms": False, "tpot_ms": False,
                     "total_ms": False, **{m: m.startswith("clips_per_hour") for m in CLIP_METRICS},
                     "image_ms": False, "images_per_hour": True, "audio_ms": False,
-                    "first_audio_p95_ms": False, "rtf": False}
+                    "first_audio_p95_ms": False, "first_pcm_p95_ms": False, "rtf": False}
 BENCH_KINDS = ("benchmark", "serve_benchmark", "clip_benchmark", *MEDIA_METRICS)
 UNITS = {**{m: "clips/h" for m in CLIP_METRICS if m.startswith("clips_per_hour")},
          "images_per_hour": "images/h", "rtf": "x"}
@@ -342,6 +342,8 @@ def compare(call, baseline, candidate, metric, threshold, resamples, seed, image
             missing.append("input integrity")
         if rec.get("kind") not in BENCH_KINDS:
             reasons_inconclusive.append(f"{label} is a '{rec.get('kind')}' record, not a benchmark")
+        elif rec.get("kind") == "audio_benchmark" and rec.get("data", {}).get("source") == "import audio":
+            reasons_inconclusive.append(f"{label} contains imported PCM without benchmark timing")
         elif rec.get("kind") == "serve_benchmark" and (rec.get("identity", {}).get("workload") or {}).get(
                 "mode") == "load":
             reasons_inconclusive.append(f"{label} is a load-mode serve_benchmark (one level, no rounds); compare "

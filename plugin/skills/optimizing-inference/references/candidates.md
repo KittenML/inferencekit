@@ -1,10 +1,6 @@
 # Candidate engines
 
-Search the web before selecting baselines for each run: use the exact model/architecture, modality, precision, workload and hardware. Check current official releases, support tables, repositories and vendor/model recipes; follow benchmark claims to their configurations and measurement conditions. Discover applicable engines beyond the examples below. There is no fixed engine list or count.
-
-Choose the strongest applicable candidates within the approved scope and budget. Record source URLs/access dates and reasons for exclusions or untested candidates in the existing research note. Recheck freshness and compatibility before reusing a previous survey. If web access is unavailable, state that current coverage is unverified; do not claim the latest or best current baseline.
-
-**Verify each candidate by launching it** on the pinned local checkpoint, at its precision, with a smoke request, then tune and measure it. Web rankings do not prove which engine wins locally. Keep versions, workloads and quality checks pinned during each comparison. Flags move between releases: **the installed version's `--help` is the authority**, and the startup log is the proof.
+Follow the [baseline checklist](../SKILL.md#3-establish-the-strongest-baseline). At run start and after changes to the model, workload, device or runtime, search official releases, support tables and recipes beyond these examples. Trace claims to their test settings. Record dated sources and exclusions within the approved scope. Without web access, mark current coverage unverified. Trust the pinned version's `--help` for flags and its logs for settings.
 
 ## Common procedure (every engine)
 
@@ -14,7 +10,7 @@ Choose the strongest applicable candidates within the approved scope and budget.
 3. **Same weights:** one local directory at the resolved sha for every engine; a converted copy (e.g. GGUF) is another artifact (record its sha256 and conversion command).
 4. **Launch** on its own port, logging to `logs/<label>.startup.log`; record the startup time (launch → ready).
 5. **Ready check:** `GET /v1/models` (or `/health`) returns 200; allow up to ~20 min for compile and graph capture.
-6. **Smoke request:** `/v1/chat/completions`, temperature 0, `max_tokens` 32, one short prompt: HTTP 200, coherent text, the expected `usage.completion_tokens`. Garbage (repeated tokens, wrong language) on a quantized checkpoint is a broken kernel path: **NOT SUPPORTED**, not slow.
+6. **Smoke request:** `/v1/chat/completions`, temperature 0, `max_tokens` 32, one short prompt. Check HTTP 200, coherent text and `usage.completion_tokens`. Time runnable quality failures as diagnostics.
 7. **Resolved config** into `state.candidates.<engine>.resolved_config`, as the engine reports it: quantization/dtype, KV cache dtype, attention backend, CUDA graph mode and capture sizes, max sequences/batch, context length, prefix caching and speculative decoding on/off.
 8. **Stop the server** by process group; check `nvidia-smi` (AMD: `amd-smi process`; CPU and Apple: `ps`) shows no compute process before the next engine. A container may outlive its killed `docker run` client: stop it by name.
 9. **On failure:** keep the last ~40 log lines with the error (on a new GPU generation typically `no kernel image is available for execution on the device`, i.e. no build for your architecture, the RTX 5090 being compute capability 12.0; `unsupported quantization method`; an unknown architecture; OOM at load). Try **one** documented fix (a wheel for a newer CUDA, a nightly, a required flag or env var, a smaller `max_model_len` for OOM); still failing: **NOT SUPPORTED**, with version, command (relative paths) and error lines.

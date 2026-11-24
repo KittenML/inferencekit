@@ -42,7 +42,7 @@ Evidence rule 8 ([evidence-rules.md](../inference-triage/references/evidence-rul
 
 ## Hard failure gates
 
-Stop that row (or the study) and report the gate when:
+Record every runnable variant's timing alongside its gate verdict. Apply these gates to interpretation and selection:
 - the resolved config does not show the format you think you run (dequantized to BF16 at load, an unplanned weight-only fallback kernel);
 - `inferencekit gates run` FAILs for the row: its speed is void;
 - the quality reference is missing: quality is UNPROVEN and no format may be recommended over the reference;

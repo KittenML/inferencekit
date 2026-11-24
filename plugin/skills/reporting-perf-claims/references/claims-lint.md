@@ -1,6 +1,6 @@
 # Claims lint: line by line
 
-Run this over the final text of any report, PR, README table or agent summary: what to check, a failing example, the fix (placeholder values). A line that cannot be fixed downgrades the claim per the verdict precedence (say which line failed). Early-engine numbers quoted in these skills are engine-timed (rule 18) and carry that label (line 6) wherever repeated.
+This checklist is applied manually. Run it over the final text of any report, PR, README table or agent summary: what to check, a failing example, the fix (placeholder values). A line that cannot be fixed downgrades the claim per the verdict precedence (say which line failed). Early-engine numbers quoted in these skills are engine-timed (rule 18) and carry that label (line 6) wherever repeated.
 
 | # | Check | Fails | Passes |
 |---|---|---|---|

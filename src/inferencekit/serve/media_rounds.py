@@ -16,7 +16,7 @@ from inferencekit.registry import OpError
 from inferencekit.serve import resources, round_evidence, rounds as rr, servers
 
 METRICS = {
-    "audio": {"audio_ms": "ms", "first_audio_p95_ms": "ms", "rtf": "x"},
+    "audio": {"audio_ms": "ms", "first_audio_p95_ms": "ms", "first_pcm_p95_ms": "ms", "rtf": "x"},
     "image": {"image_ms": "ms", "images_per_hour": "images/h"},
 }
 
@@ -137,7 +137,9 @@ def run_cell(spec: dict, k: int, position: int, cfg: dict) -> dict:
                 mets = {name: {"value": row[name], "unit": unit, "stat": "per_round", "n": cfg["n"]}
                         for name, unit in METRICS[mode].items() if round_evidence.finite(row.get(name))}
                 mets["failed_requests"] = {"value": row.get("n_failed", 0), "unit": "requests", "n": cfg["n"]}
-                if all(round_evidence.finite(row.get(name)) for name in METRICS[mode]) or (
+                # Older compatible speech clients have the original timing columns.
+                required_metrics = METRICS[mode].keys() - {"first_pcm_p95_ms"}
+                if all(round_evidence.finite(row.get(name)) for name in required_metrics) or (
                         round_evidence.finite(row.get("n_failed")) and row["n_failed"] > 0):
                     cell["metrics"] = {"all": mets}
                 cfg["last_ev"][spec["label"]] = record["evidence_id"]

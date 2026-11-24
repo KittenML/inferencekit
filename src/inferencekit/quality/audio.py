@@ -51,8 +51,8 @@ def validate_policy(doc):
     out = {"min_fixtures": 2, "min_rounds": 1, "resamples": 2000, "seed": 0,
            "allow_numerics_change": False, "metrics": {}, "scorers": {},
            "normalization": "nfkc_casefold_punctuation_v1", **doc}
-    if out.get("acceptance") not in ("exact", "task_noninferiority", "perceptual_and_task_noninferiority"):
-        raise OpError("audio acceptance must be exact, task_noninferiority or perceptual_and_task_noninferiority")
+    if out.get("acceptance") not in ("exact", "asr_noninferiority", "task_noninferiority", "perceptual_and_task_noninferiority"):
+        raise OpError("audio acceptance must be exact, asr_noninferiority, task_noninferiority or perceptual_and_task_noninferiority")
     for key in ("min_fixtures", "min_rounds", "resamples", "seed"):
         if type(out[key]) is not int or out[key] < (0 if key == "seed" else 1):
             raise OpError(f"audio policy {key} must be a positive integer (seed may be zero)")
@@ -65,8 +65,12 @@ def validate_policy(doc):
         raise OpError("unknown audio quality metric")
     if not isinstance(scorers, dict) or set(scorers) - {"asr", "asr_retry", "naturalness", "speaker", "listening"}:
         raise OpError("unknown audio scorer")
-    if out["acceptance"] != "exact" and (not set(ASR_METRICS).intersection(metrics) or "naturalness" not in metrics):
-        raise OpError("noninferiority requires registered WER or CER (or both) and naturalness margins")
+    if out["acceptance"] != "exact" and not set(ASR_METRICS).intersection(metrics):
+        raise OpError("speech task noninferiority requires WER or CER")
+    if out["acceptance"] in ("task_noninferiority", "perceptual_and_task_noninferiority") and "naturalness" not in metrics:
+        raise OpError("speech task/proxy noninferiority requires a naturalness margin")
+    if out["acceptance"] == "asr_noninferiority" and (set(metrics) - set(ASR_METRICS) or set(scorers) - {"asr", "asr_retry"}):
+        raise OpError("ASR noninferiority accepts only WER/CER and their registered scorers")
     if out["acceptance"] == "perceptual_and_task_noninferiority" and "listening" not in metrics:
         raise OpError("perceptual acceptance requires a registered listening metric")
     for name, spec in metrics.items():
@@ -138,8 +142,8 @@ def load_record(store, ref, kind):
 def load_benchmark(store, ref):
     record, root = load_record(store, ref, "audio_benchmark")
     data = record["data"]
-    if data.get("source") != "bench audio":
-        raise OpError("audio quality requires bench audio source evidence")
+    if data.get("source") not in ("bench audio", "import audio"):
+        raise OpError("audio quality requires bench audio or imported PCM source evidence")
     try:
         rows = [json.loads(line) for line in artifact_bytes(root, one_artifact(record, "requests")).splitlines()
                 if line.strip()]
@@ -308,6 +312,16 @@ def load_scores(path, protocol_id, baseline_id, candidate_id, policy, sources, t
                 raise ValueError
         except (KeyError, TypeError, ValueError):
             raise OpError("imported audio observation has a duplicate, unknown or mismatched PCM/text identity") from None
+        error = item.get("error")
+        if isinstance(error, dict) and error.get("naturalness") == "nonfinite_or_out_of_scale_score":
+            windows = error.get("windows")
+            if (set(error) != {"naturalness", "windows"} or "naturalness" in item
+                    or "naturalness" not in policy["metrics"] or not isinstance(windows, list) or not windows
+                    or any(not isinstance(window, dict) or set(window) != {"start_frame", "end_frame"}
+                           or any(type(v) is not int for v in window.values())
+                           or not 0 <= window["start_frame"] < window["end_frame"] <= row["sample_count"]
+                           for window in windows)):
+                raise OpError("invalid naturalness scorer error")
         values = {}
         if "asr" in item:
             asr = item["asr"]

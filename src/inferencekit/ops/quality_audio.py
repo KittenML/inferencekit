@@ -149,11 +149,12 @@ def _metric_check(name, policy, observations, keys):
            "Score saved speech PCM with exact parity and registered, hash-bound ASR/MOS/listening observations.",
            [Arg("baseline", "string", "Baseline bench audio evidence id.", required=True),
             Arg("candidate", "string", "Candidate bench audio evidence id.", required=True),
+            Arg("baseline_repeat", "string", "Optional independent A/A baseline capture for exact PCM acceptance."),
             Arg("fixtures", "string", "Original speech fixture JSONL.", required=True),
             Arg("protocol", "string", "Evidence id from quality audio-policy.", required=True),
             Arg("scores", "string", "Optional external observation JSON; never executes or downloads models."),
             Arg("run_dir", "string", "Also copy evidence and quality/audio_score.json to this run.")])
-def quality_audio(call, baseline, candidate, fixtures, protocol, scores, run_dir):
+def quality_audio(call, baseline, candidate, fixtures, protocol, scores, run_dir, baseline_repeat=None):
     store = ev.Store()
     registered, policy_root = qa.load_record(store, protocol, "quality_audio")
     if registered["data"].get("format") != qa.POLICY_FORMAT:
@@ -171,16 +172,37 @@ def quality_audio(call, baseline, candidate, fixtures, protocol, scores, run_dir
     if set(arows) != set(brows):
         raise OpError("audio source request pairs are incomplete")
     keys = sorted(arows)
+    repeat = None
+    repeat_check = None
+    if baseline_repeat:
+        if policy["acceptance"] != "exact":
+            raise OpError("baseline-repeat is available for exact PCM acceptance")
+        repeat, repeat_rows = qa.load_benchmark(store, baseline_repeat)
+        _source_compatibility(a, repeat, policy)
+        if repeat["evidence_id"] in {a["evidence_id"], b["evidence_id"]}:
+            raise OpError("baseline-repeat must identify a separate capture")
+        a_engine, repeat_engine = (source["identity"]["engine"] for source in (a, repeat))
+        if (set(arows) != set(repeat_rows) or any(a_engine.get(k) != repeat_engine.get(k)
+                                                 for k in ("version", "commit", "flags"))):
+            raise OpError("baseline-repeat must match the baseline configuration and requests")
+        complete = [key for key in keys if all(rows[key]["ok"] and rows[key]["pcm"] is not None
+                                               for rows in (arows, repeat_rows))]
+        differences = [f"{key[0]}/r{key[1]}" for key in complete if arows[key]["pcm"] != repeat_rows[key]["pcm"]]
+        repeat_check = {"evidence_id": repeat["evidence_id"], "differences": differences, "compared": len(complete),
+                        "verdict": "FAIL" if differences else "PASS" if len(complete) == len(keys) else "UNPROVEN"}
     registered_at = _timestamp(registered["provenance"]["ended"])
-    starts = [r.get("t_start") for rec in (a, b) for r in rec["data"]["rounds"]]
+    sources = {"baseline": a, "candidate": b}
+    if repeat is not None:
+        sources["baseline_repeat"] = repeat
+    starts = [r.get("t_start") for rec in sources.values() for r in rec["data"]["rounds"]]
     preregistered = bool(registered_at is not None and starts and all(
         qa.finite(t) and registered_at <= t for t in starts))
     observations, imported = qa.load_scores(scores, registered["evidence_id"], a["evidence_id"], b["evidence_id"],
                                             policy, {"baseline": arows, "candidate": brows},
                                             {f.id: f.text for f in fixture_rows})
     missing, pairs = [], []
-    source_coverage = {arm: round_coverage(rec) for arm, rec in (("baseline", a), ("candidate", b))}
-    for arm, rec in (("baseline", a), ("candidate", b)):
+    source_coverage = {arm: round_coverage(rec) for arm, rec in sources.items()}
+    for arm, rec in sources.items():
         coverage = source_coverage[arm]
         if (coverage["complete"] is False or coverage["gaps"] or
                 rec["data"].get("scheduler_final") and coverage["complete"] is not True):
@@ -207,6 +229,10 @@ def quality_audio(call, baseline, candidate, fixtures, protocol, scores, run_dir
               "parity": {"verdict": exact, "required": policy["acceptance"] == "exact"},
               "round_coverage": {"verdict": round_verdict, "arms": source_coverage},
               "registration": {"verdict": "PASS" if preregistered else "UNPROVEN"}}
+    if repeat_check is not None:
+        checks["baseline_repeat"] = repeat_check
+        if repeat_check["verdict"] != "PASS":
+            missing.append("byte-identical A/A baseline PCM")
     if not preregistered:
         missing.append("policy registered before every measured round")
     rounds = len(a["data"]["rounds"])
@@ -236,10 +262,12 @@ def quality_audio(call, baseline, candidate, fixtures, protocol, scores, run_dir
                                     subject=b["data"]["label"]))
     required = [structural, checks["registration"]["verdict"], "PASS" if enough and not missing else "UNPROVEN"]
     if policy["acceptance"] == "exact":
-        required.append(exact)
+        stable_baseline = repeat_check is None or repeat_check["verdict"] == "PASS"
+        required.append(exact if stable_baseline else "UNPROVEN")
     required.extend(checks[name]["verdict"] for name in policy["metrics"])
     verdict = stats.combine_claims(required)
     scope = {"exact": "bit-exact preservation of the named baseline outputs",
+             "asr_noninferiority": "registered WER/CER noninferiority",
              "task_noninferiority": "registered speech task/proxy noninferiority (predicted MOS, not human listening)",
              "perceptual_and_task_noninferiority": "registered speech task and blinded-listening noninferiority"}[policy["acceptance"]]
     limitations = ["Quality is relative to the named baseline; baseline intelligibility and suitability are not established.",

@@ -44,6 +44,7 @@ python3 ~/.local/share/inferencekit/plugin/opencode/install.py
 ## The CLI or the MCP server alone
 
 - **CLI:** `uvx --from 'inferencekit-cli==0.1.1' inferencekit doctor`, or `uv tool install 'inferencekit-cli==0.1.1'`.
+- **Hosts without a build environment:** install the published wheel in an existing virtual environment with `python -m pip install --only-binary=:all: inferencekit-cli==0.1.1`. For unreleased builds, use the wheel from the matching source revision.
 - **MCP server, for any MCP client:** `uvx --from 'inferencekit-cli[mcp]==0.1.1' inferencekit mcp serve` (stdio). Every CLI command is also a tool with the same arguments.
 - **Unreleased source changes:** the plugin's MCP configuration uses the published CLI version above, not the current checkout. New operations require a release or an MCP server installed from the matching source; check the advertised tool list before relying on them.
 - **If the MCP server does not start** (no `uvx`, no network, a failed install): install the CLI pinned to the plugin's version and let the agent call it from the shell. The skills say how.

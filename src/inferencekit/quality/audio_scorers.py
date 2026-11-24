@@ -118,6 +118,8 @@ def normalize_config(doc, base=None):
                         "predict_dataset": "sarulab", "num_repetitions": 1}
         else:
             defaults = {}
+        if role == "naturalness" and "min_tail_seconds" in spec.get("settings", {}):
+            defaults["min_tail_seconds"] = 0
         if set(spec.get("settings", {})) - set(defaults):
             raise ValueError("unknown_scorer_setting")
         settings = {**defaults, **spec.get("settings", {})}
@@ -134,6 +136,9 @@ def normalize_config(doc, base=None):
             seconds = settings["window_seconds"]
             if type(seconds) not in (int, float) or not math.isfinite(seconds) or not 0 < seconds <= 3:
                 raise ValueError("utmos_window_seconds_must_be_positive_at_most_three")
+            min_tail = settings.get("min_tail_seconds", 0)
+            if type(min_tail) not in (int, float) or not math.isfinite(min_tail) or not 0 <= min_tail <= seconds:
+                raise ValueError("utmos_min_tail_seconds_must_be_within_window")
             _positive(settings["fold"], "fold", 4, zero=True)
             _positive(settings["checkpoint_seed"], "checkpoint_seed", zero=True)
             _positive(settings["num_repetitions"], "num_repetitions")
@@ -268,9 +273,12 @@ def describe(config):
     return result
 
 
-def windows(frames, rate, seconds):
+def windows(frames, rate, seconds, min_tail_seconds=0):
     step = max(1, int(rate * seconds))
-    return [(start, min(start + step, frames)) for start in range(0, frames, step)]
+    result = [(start, min(start + step, frames)) for start in range(0, frames, step)]
+    if len(result) > 1 and (frames - result[-1][0]) / rate < min_tail_seconds:
+        result[-2:] = [(result[-2][0], frames)]
+    return result
 
 
 def _audio(raw, rate, channels):
@@ -374,7 +382,8 @@ def _naturalness(spec, config, jobs, rows):
     for job, row in zip(jobs, rows):
         raw = Path(job["pcm_path"]).read_bytes()
         row["naturalness"] = {"windows": []}
-        for start, end in windows(job["sample_count"], job["sample_rate"], settings["window_seconds"]):
+        for start, end in windows(job["sample_count"], job["sample_rate"], settings["window_seconds"],
+                                  settings.get("min_tail_seconds", 0)):
             window = {"start_frame": start, "end_frame": end}
             row["naturalness"]["windows"].append(window)
             chunk = raw[start * job["channels"] * 2:end * job["channels"] * 2]
@@ -397,8 +406,18 @@ def _naturalness(spec, config, jobs, rows):
             if len(scores) != len(batch):
                 raise ValueError("missing_naturalness_scores")
             for (targets, _), score in zip(batch, scores):
+                try:
+                    value = _scalar(score, 1, 5)
+                except ValueError:
+                    continue
                 for window in targets:
-                    window["score"] = _scalar(score, 1, 5)
+                    window["score"] = value
+    for row in rows:
+        invalid = [{"start_frame": window["start_frame"], "end_frame": window["end_frame"]}
+                   for window in row["naturalness"]["windows"] if "score" not in window]
+        if invalid:
+            row.pop("naturalness")
+            row["error"] = {"naturalness": "nonfinite_or_out_of_scale_score", "windows": invalid}
 
 
 def _speaker(spec, config, jobs, rows, scratch):

@@ -48,7 +48,9 @@ from inferencekit.proc import run as run_cmd
 from inferencekit.registry import Arg, OpError, operation
 
 ORDER = ("Perf-Workload", "Perf-Decode-Tok-S", "Perf-TTFT-Ms", "Perf-P95-Latency-Ms", "Perf-Quality", "Perf-Cost",
-         "Perf-Capacity-N", "Perf-Goodput", "Perf-Evidence", "Perf-Baseline")
+         "Perf-Capacity-N", "Perf-Goodput", "Perf-Speech-First-Audio-Ms", "Perf-Speech-First-PCM-Ms",
+         "Perf-Speech-RTF", "Perf-Speech-Peak-RSS-MiB", "Perf-Speech-Capacity-N", "Perf-Speech-Audio-S-Per-S",
+         "Perf-Evidence", "Perf-Baseline")
 SPEED_KINDS = ("benchmark", "serve_benchmark")
 # Metric names accepted for each headline (v1 names first; v2 aliases after).
 DECODE = ("decode_tok_s", "decode_tok_s_median")
@@ -334,6 +336,8 @@ def build_trailers(recs: list[dict], base: dict | None, baseline_commit: str | N
     else:
         b.omit("Perf-Goodput", "no goodput in capacity evidence")
 
+    speech_trailers(b, recs)
+
     ids = [r.get("evidence_id") for r in recs] + ([base.get("evidence_id")] if base else [])
     b.add("Perf-Evidence", ", ".join(short(i) for i in dict.fromkeys(ids) if i), "observed", [])
     baseline = baseline_commit or (short(base["evidence_id"]) if base else None)
@@ -345,6 +349,44 @@ def build_trailers(recs: list[dict], base: dict | None, baseline_commit: str | N
     else:
         b.omit("Perf-Baseline", "no --baseline-commit, --baseline-ev or comparison record")
     return b
+
+
+def speech_trailers(builder, recs):
+    benchmarks = [r for r in recs if kind_of(r) == "audio_benchmark"
+                  and r.get("data", {}).get("claim_validity", {}).get("valid") is True]
+    if benchmarks:
+        for key, name, stat in (
+            ("Perf-Speech-First-Audio-Ms", "first_audio_ms", "p95"),
+            ("Perf-Speech-First-PCM-Ms", "first_pcm_ms", "p95"),
+            ("Perf-Speech-RTF", "rtf", "p95"),
+            ("Perf-Speech-Peak-RSS-MiB", "peak_rss_mib", None),
+        ):
+            got = pick(benchmarks, (name,), stats=(stat,) if stat else None)
+            if got:
+                metrics, record = got
+                value = values_text(metrics) + (" p95" if stat else "")
+                claim_class = "observed" if name in ("first_pcm_ms", "peak_rss_mib") else "derived"
+                builder.add(key, value, claim_class, [record.get("evidence_id")])
+    for record in recs:
+        if kind_of(record) != "audio_capacity":
+            continue
+        data = record["data"]
+        level, source = data.get("n_star"), [record.get("evidence_id")]
+        if level is not None:
+            slo = data["slo"]
+            limits = []
+            if slo.get("first_audio_p95_ms") is not None:
+                limits.append(f"p95 first audio <= {num(slo['first_audio_p95_ms'])} ms")
+            limits.extend((f"p95 RTF <= {num(slo['rtf_p95'])}", "zero underruns"))
+            value = f"{num(level)} streams (per stream: {', '.join(limits)})"
+            builder.add("Perf-Speech-Capacity-N", value, "derived", source)
+        subject = f"concurrency {level or data.get('highest_passing_tested')}"
+        metric = next((m for m in record.get("metrics", []) if m["name"] == "audio_s_per_s"
+                       and m.get("subject") == subject and m.get("value") is not None), None)
+        if metric:
+            builder.add("Perf-Speech-Audio-S-Per-S", f"{num(metric['value'])} audio s/s at {subject}",
+                        "derived", source)
+        break
 
 
 def _subject_metric(rec: dict, names, subject: str | None, others=()) -> dict | None:
@@ -488,7 +530,7 @@ def select_engine(recs: list[dict], label: str | None) -> list[dict]:
     Two engines' speed records (or a baseline's and a candidate's passed together) would
     otherwise put the first one's number in the commit as its headline.
     """
-    measured = SPEED_KINDS + ("capacity",)
+    measured = SPEED_KINDS + ("capacity", "audio_capacity", "audio_benchmark")
     labels = sorted({label_of(r) for r in recs if kind_of(r) in measured and label_of(r)})
     if label is not None:
         if label not in labels:
@@ -500,7 +542,9 @@ def select_engine(recs: list[dict], label: str | None) -> list[dict]:
                       "for the engine this commit measures, and the baseline's record as --baseline-ev (or a "
                       "`compare` record for a delta with a CI)")
     for what, group in (("single-user benchmark", [r for r in recs if kind_of(r) in SPEED_KINDS and not is_load(r)]),
-                        ("capacity", [r for r in recs if kind_of(r) == "capacity"])):
+                        ("capacity", [r for r in recs if kind_of(r) == "capacity"]),
+                        ("speech benchmark", [r for r in recs if kind_of(r) == "audio_benchmark"]),
+                        ("speech capacity", [r for r in recs if kind_of(r) == "audio_capacity"])):
         if len(group) > 1:
             raise OpError(f"{len(group)} {what} records for one engine "
                           f"({', '.join(short(r.get('evidence_id')) for r in group)}): pass only the one this commit "

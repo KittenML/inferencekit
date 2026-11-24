@@ -40,6 +40,7 @@ ARGS = [
     Arg("rounds", "integer", "Timed passes; screening in one server process.", default=3),
     Arg("first_round", "integer", "First round index; default zero or previous maximum plus one."),
     Arg("warmup", "integer", "Untimed distinct-text requests before measurement.", default=1),
+    Arg("warmup_fixtures", "string", "Optional separate warmup fixture JSONL, for precomputed inputs."),
     Arg("seed_base", "integer", "Shared deterministic round-seed base.", default=0),
     Arg("sample_rate", "integer", "Required decoded PCM sample rate.", default=44100),
     Arg("channels", "integer", "Required PCM channels.", default=1),
@@ -211,7 +212,7 @@ def _previous(store, reference, config_sha, call):
            "first-audio p95, complete audio, RTF and buffer underruns. Audio quality remains UNPROVEN.", ARGS)
 def bench_audio(call, base_url, model, model_revision, model_dtype, model_quant, fixtures, label, rounds, first_round, warmup, seed_base, sample_rate,
                 channels, settings, api_key_env, engine_version, hardware_name, run_dir, timeout_s,
-                resamples, save_outputs, slo_first_audio_p95_ms, slo_rtf, extend, endpoint_id=None, device="gpu", gpu_count=1):
+                resamples, save_outputs, slo_first_audio_p95_ms, slo_rtf, extend, endpoint_id=None, device="gpu", gpu_count=1, warmup_fixtures=None):
     if rounds < 1 or (first_round is not None and first_round < 0) or warmup < 0 or resamples < 1:
         raise OpError("rounds/resamples must be positive; first_round/warmup nonnegative")
     if not _ID.fullmatch(label):
@@ -246,6 +247,10 @@ def bench_audio(call, base_url, model, model_revision, model_dtype, model_quant,
             raise OpError(f"settings conflict with declared {key}")
         setting_doc[key] = value
     fixture_rows, fixture_sha = load_fixtures(fixtures)
+    warm_fixtures, warm_fixture_sha = load_fixtures(warmup_fixtures) if warmup_fixtures else (fixture_rows, None)
+    measured_text = {f.text for f in fixture_rows}
+    if warmup_fixtures and any(f.text in measured_text for f in warm_fixtures):
+        raise OpError("warmup fixtures must use texts distinct from timed fixtures")
     try:
         parsed_url = urlsplit(base_url if "://" in base_url else "http://" + base_url)
         if parsed_url.username is not None or parsed_url.password is not None or parsed_url.query or parsed_url.fragment:
@@ -266,6 +271,7 @@ def bench_audio(call, base_url, model, model_revision, model_dtype, model_quant,
                                     **({"device": "cpu"} if device == "cpu" else {}),
                                     **({"gpu_count": gpu_count} if gpu_count != 1 else {}),
                                     "engine_version": engine_version, "effective_settings": setting_doc,
+                                    **({"warmup_fixture_sha256": warm_fixture_sha} if warm_fixture_sha else {}),
                                     "save_outputs": save_outputs,
                                     "slo_first_audio_p95_ms": slo_first_audio_p95_ms, "slo_rtf": slo_rtf}).encode())
     previous, previous_rows, previous_rounds = _previous(store, extend, config_sha, record_call)
@@ -303,10 +309,12 @@ def bench_audio(call, base_url, model, model_revision, model_dtype, model_quant,
                     else:
                         _write(roots, artifact["path"], blob)
             for i in range(warmup):
-                fixture = fixture_rows[i % len(fixture_rows)]
-                text = f"Inferencekit untimed speech warmup {i}. " + fixture.text
-                while text in {f.text for f in fixture_rows}:
-                    text = "Warmup. " + text
+                fixture = warm_fixtures[i % len(warm_fixtures)]
+                text = fixture.text
+                if not warmup_fixtures:
+                    text = f"Inferencekit untimed speech warmup {i}. " + text
+                    while text in measured_text:
+                        text = "Warmup. " + text
                 result = backend.generate(request(fixture, round_seed(seed_base, -i - 1), text))
                 warm_rows.append({"ok": result.ok, "error": result.error})
             for round_index in range(first_round, first_round + rounds):
@@ -329,6 +337,7 @@ def bench_audio(call, base_url, model, model_revision, model_dtype, model_quant,
                                    "n_failed": len(current_rows) - len(valid),
                                    "audio_ms": sum(r["complete_audio_ms"] for r in valid) / len(valid) if valid else None,
                                    "first_audio_p95_ms": pct([r["first_audio_ms"] for r in valid], 95),
+                                   "first_pcm_p95_ms": pct([r["first_pcm_ms"] for r in valid], 95),
                                    "rtf": sum(r["rtf"] for r in valid) / len(valid) if valid else None})
             metrics, table = audio_metrics(rows, resamples)
             failed = sum(not row["ok"] for row in rows)
@@ -341,7 +350,8 @@ def bench_audio(call, base_url, model, model_revision, model_dtype, model_quant,
                     "base_url_kind": "local" if endpoint.is_local() else "remote",
                     "fixture_set": {"sha256": fixture_sha, "fixtures": [f.identity() for f in fixture_rows]},
                     "configuration_sha256": config_sha, "extends": previous["evidence_id"] if previous else None,
-                    "rounds": round_rows, "warmup": {"excluded": True, "requests": warm_rows},
+                    "rounds": round_rows, "warmup": {"excluded": True, "requests": warm_rows,
+                                                  "fixture_sha256": warm_fixture_sha},
                     "per_request": table, "failed_requests": failed, "total_requests": len(rows),
                     "structural_verdict": structure, "timing_verdict": timing, "quality_verdict": "UNPROVEN",
                     "verdict": verdict, "claim_validity": {"valid": not failed, "checked": [
