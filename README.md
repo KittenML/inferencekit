@@ -75,10 +75,6 @@ GPT-6.1 Sol used inferencekit to remove a redundant sampler sort, compile single
 
 [How it was built, results and usage](https://github.com/KittenML/inferencekit-engines/tree/main/drama-3_apple-m4-16gb/profiles/main5-tower5/)
 
-### On-device speech on Galaxy S25
-
-With simulated playback, Kokoro-82M sustained **three English streams** on Adreno OpenCL and VieNeu-TTS-v3-Turbo sustained **five Vietnamese streams** on CPU, each for 7.5 minutes. VieNeu used a 700 ms startup buffer. [Kokoro engine and evidence](https://github.com/KittenML/inferencekit-engines/tree/main/kokoro-82m_galaxy-s25) · [VieNeu engine and evidence](https://github.com/KittenML/inferencekit-engines/tree/main/vieneu-tts-v3-turbo_galaxy-s25)
-
 ### MOSS-Image-SFT: an accepted speed/quality trade-off on AMD
 
 GPT-6.1 Terra used inferencekit to wire online FP8 into selected transformer projections and tune the quantization scale and step count. **2.46× faster than the tested tuned vLLM-Omni baseline** on a 16 GB RX 9070 XT: FP8/24 steps versus BF16/50 steps, with quality secondary.
@@ -111,6 +107,10 @@ GPT-6.1 Terra used inferencekit to wire online FP8 into selected transformer pro
 Time and tokens include setup, benchmarking, optimization, validation and reporting. Costs are API list-price estimates; most tokens are cached conversation reads. How each engine was built and measured: [inferencekit-engines](https://github.com/kittenml/inferencekit-engines).
 
 </details>
+
+### Others
+
+- Tested Kokoro-82M on Galaxy S25 with InferenceKit. [Engine and benchmarks](https://github.com/KittenML/inferencekit-engines/tree/main/kokoro-82m_galaxy-s25)
 
 <a id="speed-you-can-trust"></a>
 
