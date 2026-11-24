@@ -62,7 +62,7 @@ def test_every_version_source_agrees():
     assert set(found.values()) == {inferencekit.__version__}
     for source in ("pyproject.toml [project].version", "plugin/.claude-plugin/plugin.json version",
                    ".claude-plugin/marketplace.json metadata.version",
-                   ".claude-plugin/marketplace.json plugins[inferencekit].version", "plugin/.mcp.json uvx pin"):
+                   ".claude-plugin/marketplace.json plugins[inferencekit].version"):
         assert source in found
 
 
@@ -77,12 +77,13 @@ def test_check_versions_catches_drift(tmp_path):
     _copy_version_sources(tmp_path)
     assert check_versions.check(tmp_path)[1] == []
     mcp = tmp_path / "plugin/.mcp.json"
-    mcp.write_text(mcp.read_text().replace(f"=={inferencekit.__version__}", "==0.0.1"))
+    mcp.write_text(mcp.read_text().replace("@latest", f"=={inferencekit.__version__}"))
     readme = tmp_path / "README.md"
     readme.write_text("uvx --from 'inferencekit-cli[mcp]==9.9.9' inferencekit mcp serve\n"
                       "pin it as inferencekit-cli[mcp]==X\n")  # a placeholder, not a version
     errors = check_versions.check(tmp_path)[1]
-    assert any("plugin/.mcp.json uvx pin = 0.0.1" in e for e in errors), errors
+    assert any(e.startswith("plugin/.mcp.json: expected uvx --from inferencekit-cli[mcp]@latest")
+               for e in errors), errors
     assert any("README.md:1 pin = 9.9.9" in e for e in errors), errors
     assert not any("README.md:2" in e for e in errors), errors
     assert check_versions.main(["--root", str(tmp_path), "--json"]) == 1
@@ -138,10 +139,10 @@ def test_version_flag(capsys):
     assert r.returncode == 0 and r.stdout.strip() == f"inferencekit {inferencekit.__version__}"
 
 
-def test_mcp_launcher_is_pinned_to_this_version():
+def test_mcp_launcher_resolves_the_latest_release():
     server = json.loads((ROOT / "plugin/.mcp.json").read_text())["mcpServers"]["inferencekit"]
     assert server["command"] == "uvx"
-    assert server["args"] == ["--from", f"inferencekit-cli[mcp]=={inferencekit.__version__}",
+    assert server["args"] == ["--from", "inferencekit-cli[mcp]@latest",
                               "inferencekit", "mcp", "serve"]
 
 

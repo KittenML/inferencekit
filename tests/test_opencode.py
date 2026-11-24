@@ -17,7 +17,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-import inferencekit
 
 ROOT = Path(__file__).resolve().parents[1]
 OC = ROOT / "plugin" / "opencode"
@@ -84,8 +83,8 @@ def test_agents_fit_opencode(path: Path):
 def test_mcp_entry_matches_the_claude_launcher():
     entry = install.mcp_entry()
     assert entry["type"] == "local" and entry["enabled"] is True and entry["timeout"] >= 60_000
-    assert entry["command"] == ["uvx", "--from", f"inferencekit-cli[mcp]=={inferencekit.__version__}",
-                                "inferencekit", "mcp", "serve"]
+    server = json.loads((ROOT / "plugin" / ".mcp.json").read_text())["mcpServers"]["inferencekit"]
+    assert entry["command"] == [server["command"], *server["args"]]
 
 
 def _run(*args) -> subprocess.CompletedProcess:

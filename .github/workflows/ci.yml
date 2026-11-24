@@ -31,7 +31,7 @@ jobs:
           version: "0.12.7"
           python-version: ${{ matrix.python }}
           enable-cache: true
-      - name: Versions agree (pyproject, __version__, plugin, marketplace, MCP pin)
+      - name: Verify release versions and the MCP launcher
         run: uv run --no-project python scripts/release/check_versions.py
       - name: Install (uv.lock must be current)
         run: uv sync --locked --all-extras
@@ -78,11 +78,10 @@ jobs:
           npx -y @openai/codex@0.162.1 plugin add inferencekit@inferencekit
           npx -y @openai/codex@0.162.1 plugin list | tee plugins.txt
           grep -E '^inferencekit@inferencekit +installed, enabled' plugins.txt
-      - name: The plugin's MCP server is registered with the pinned launcher
+      - name: The plugin's MCP server uses the latest-release launcher
         run: |
           npx -y @openai/codex@0.162.1 mcp list | tee mcp.txt
-          version="$(python3 -c 'import json; print(json.load(open("plugin/.claude-plugin/plugin.json"))["version"])')"
-          grep -F "inferencekit-cli[mcp]==$version inferencekit mcp serve" mcp.txt
+          grep -F 'inferencekit-cli[mcp]@latest inferencekit mcp serve' mcp.txt
 
   opencode:
     # OpenCode has no marketplace for plugins: plugin/opencode/install.py wires the skills, commands, subagents and
@@ -110,11 +109,11 @@ jobs:
           import json
           skills = {s["name"] for s in json.load(open("skills.json"))}
           cfg = json.load(open("config.json"))
-          version = json.load(open("plugin/.claude-plugin/plugin.json"))["version"]
+          server = json.load(open("plugin/.mcp.json"))["mcpServers"]["inferencekit"]
           assert {"inference-triage", "optimizing-inference", "benchmarking", "profiling", "optimizing-kernels",
                   "proving-correctness", "evaluating-quantization", "reporting-perf-claims"} <= skills, skills
           assert {"optimize-inference", "bench", "profile", "perf-report"} <= set(cfg.get("command", {}))
           assert {"engine-scout", "quant-scout", "profile-analyst", "claims-skeptic"} <= set(cfg.get("agent", {}))
-          assert cfg["mcp"]["inferencekit"]["command"][:3] == ["uvx", "--from", f"inferencekit-cli[mcp]=={version}"]
+          assert cfg["mcp"]["inferencekit"]["command"] == [server["command"], *server["args"]]
           print("OpenCode sees", sorted(skills))
           PY

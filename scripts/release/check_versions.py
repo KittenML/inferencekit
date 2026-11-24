@@ -6,7 +6,6 @@ Sources (all must name the same version):
   - src/inferencekit/__init__.py __version__
   - plugin/.claude-plugin/plugin.json      version
   - .claude-plugin/marketplace.json        metadata.version and the inferencekit plugin entry's version
-  - plugin/.mcp.json            the ``inferencekit-cli[mcp]==X`` pin the MCP launcher installs
   - plugin/skills/*/SKILL.md    each skill's frontmatter ``metadata.version``
   - plugin/skills/optimizing-inference/references/manifest.md   the example's ``"inferencekit_version"``
   - any ``inferencekit-cli...==X`` pin written in README.md, AGENTS.md, docs/ or plugin/ text files
@@ -14,6 +13,8 @@ Sources (all must name the same version):
 The skills and the manifest example are checked when they exist (a partial copy of the sources has
 neither). A SKILL.md with frontmatter but no metadata.version, or a manifest.md without
 inferencekit_version, is an error.
+
+The MCP launcher in plugin/.mcp.json is checked separately. It resolves the latest published CLI.
 
 With ``--release`` it also fails while the placeholder organisation ORG is still in place: a
 ``github.com/ORG/...`` URL (links and image sources alike) or an ``ORG/inferencekit...`` repo slug
@@ -125,10 +126,9 @@ def collect(root: Path) -> tuple[dict[str, str | None], list[str]]:
         if not server:
             problems.append("plugin/.mcp.json: no mcpServers.inferencekit entry")
             return
-        pins = [m.group(1) for a in server.get("args", []) for m in [PIN_RX.fullmatch(a)] if m]
-        if len(pins) != 1:
-            problems.append(f"plugin/.mcp.json: expected exactly one inferencekit-cli[mcp]==X pin in args, got {pins}")
-        found["plugin/.mcp.json uvx pin"] = pins[0] if pins else None
+        args = ["--from", "inferencekit-cli[mcp]@latest", "inferencekit", "mcp", "serve"]
+        if server.get("command") != "uvx" or server.get("args") != args:
+            problems.append("plugin/.mcp.json: expected uvx --from inferencekit-cli[mcp]@latest inferencekit mcp serve")
 
     read("plugin/.mcp.json", mcp)
 
