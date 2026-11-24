@@ -108,6 +108,10 @@ Time and tokens include setup, benchmarking, optimization, validation and report
 
 </details>
 
+### Others
+
+- Tested Kokoro-82M on Galaxy S25 with InferenceKit. [Engine and benchmarks](https://github.com/KittenML/inferencekit-engines/tree/main/kokoro-82m_galaxy-s25)
+
 <a id="speed-you-can-trust"></a>
 
 ## Performance and quality validation
