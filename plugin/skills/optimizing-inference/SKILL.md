@@ -15,6 +15,7 @@ Deliver reproducible code and evidence against the strongest tuned, supported ba
 
 - Reuse the unmodified inferencekit harness and datasets. A missing modality adapter is a recorded limitation; do not disguise a custom timer as harness evidence.
 - Fix input distribution, output work, sampling/seeds, component precisions and quality protocol before comparing. Treat baseline and candidate symmetrically. Numerical changes follow [fidelity](references/fidelity.md); cross-precision results disclose both formats and quality.
+- In every experiment (quantisation, precision, activation bit-width, kernel or graph change, approximation, any optimisation), measure the speed of every variant even when its quality fails or is broken. Never skip, defer or drop a timing because quality broke. Record quality and speed side by side, and label a broken-quality row as such, but still time it. If a timing truly cannot run (the build is refused, or it crashes), report it as NOT RUN with the exact error, never "skipped because of quality". Pass this rule verbatim into every subagent and workflow brief.
 - Launch pinned implementations to establish support. Verify each knob in the resolved runtime config; an ignored flag is a finding.
 - Keep every attempt, including failures, in the [state and ledger](references/state.md). Label numbers observed, derived or inferred and claims PASS / FAIL / UNPROVEN / NOT RUN.
 - Check `inferencekit intake budget runs/<run-id>` before long steps. Preserve existing spending authorization; never expand it silently. Keep secrets, access details and provider names out of artifacts.
@@ -63,15 +64,10 @@ Estimate critical-path share, attainable efficiency, exact byte savings and perm
 
 ## 3. Establish the strongest baseline
 
-Search the web at the start of each run for current engines and recipes for the exact model, hardware and goal; refresh when these or the runtime change. [candidates.md](references/candidates.md) gives examples, not a fixed list or count. Launch compatible engines in isolated environments; record sources, versions, commands, resolved configs and smoke results. NVIDIA graphs are not a generic launch flag for AMD or Apple.
-
-[Tune](references/tuning.md) and measure at least three independent, widely used baseline engines on each target device before optimizing the candidate. Select the strongest eligible result for the stated goal. Multiple wrappers or settings for one underlying engine count as one engine. If fewer than three can run, record every attempted engine, timing and exact blocker. The baseline screen stays incomplete until the required coverage is reached. An explicitly fixed benchmark control can still be measured and labelled fixed.
+- [Research](references/candidates.md) current engines and recipes for the exact model, workload and device. [Tune](references/tuning.md) and time at least three independent, widely used engines per target device before optimizing. Count an engine once across wrappers and settings. Select the strongest eligible result for the goal. Record attempts, timings and exact blockers when coverage is incomplete. Label any fixed benchmark control separately.
+- **Verify the configuration.** Pin the artifact's publisher, revision and checksum. Record weight, activation and compute precision by stage and operation. Verify backend placement and fallback from runtime evidence. Use the applicable official export when available. Label community and local exports separately, with mixed precision explicit for partial quantization. Time the published recipe and graph changes with the same workload and timer.
 
 For build routes, text uses the [engine skeleton](../optimizing-kernels/skeleton/README.md). Other models use their native pipeline and [custom-engine contract](references/candidates.md#custom-engine-contract).
-
-For each baseline, verify the exact model artifact, publisher, revision and checksum. Record which stages and operations use each weight, activation and compute precision. Confirm device placement from runtime evidence and record any fallback. Distinguish the publisher's official artifact, a community export and a local conversion. A locally quantized MatMul path with FP32 convolutions is a mixed-precision configuration. It cannot stand in for an available official INT8 export with a different graph or coverage. Keep the published recipe result and time it on the same workload and timer before comparing it to a modified graph.
-
-In every experiment (quantisation, precision, activation bit-width, kernel or graph change, approximation, any optimisation), measure the speed of every variant even when its quality fails or is broken. Never skip, defer or drop a timing because quality broke. Record quality and speed side by side, and label a broken-quality row as such, but still time it. If a timing truly cannot run (the build is refused, or it crashes), report it as NOT RUN with the exact error, never "skipped because of quality". Pass this rule verbatim into every subagent and workflow brief.
 
 ## 4. Screen and measure
 

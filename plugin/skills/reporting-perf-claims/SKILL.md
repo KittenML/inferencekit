@@ -25,7 +25,7 @@ A performance claim is a statement someone will act on: it says what was measure
 
 - A number without an evidence id or a formula.
 - A speedup without an interleaved A/B whose ratio CI95 excludes 1.
-- A speed comparison across precisions (weights, activations, KV cache, lm_head), GPUs or workloads presented as an engine result.
+- An engine speedup claim across checkpoints, precisions, devices, backend placements or workloads. Report absolute timings as deployment results.
 - An engine-timed (`bench decode`) number in a published table, or next to client-timed (`bench serve`) numbers without its label.
 - A profile (nsys, ncu) cited as proof of a speedup.
 - Missing data shown as 0, blank or PASS.

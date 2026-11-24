@@ -15,9 +15,7 @@ Choose the workload before the metric: complete-request latency, sustained throu
 
 For native phone speech, use [on-device speech](../inference-triage/references/phones.md) to import first audio, RTF, underruns and throughput under concurrent open-loop load.
 
-Speed numbers that survive review: a timer outside the engine, one precision for every engine, settings proven in effect, warm engines, fresh-process rounds in a balanced order, confidence intervals, a speed-of-light ceiling and anti-cheat gates. [optimizing-inference](../optimizing-inference/SKILL.md) calls this skill.
-
-**Use** for latency and tok/s per input bucket, capacity (`N*` within an SLO, goodput, $/1M tokens), comparisons of engines, configs or builds, and any reported number. A change-loop step needs only a screen. The full protocol is for milestones (fixed rounds: [references/statistics.md](references/statistics.md)) and published results ([optimizing-kernels](../optimizing-kernels/SKILL.md), "Checks"). Use [profiling](../profiling/SKILL.md) to explain the cost and [proving-correctness](../proving-correctness/SKILL.md) to determine whether it qualifies as a speedup. Retain runnable timing rows even when outputs fail quality.
+Screen individual changes. Use the full protocol at [milestones](../optimizing-kernels/SKILL.md#checks-and-implementation-loop) and for published claims. See [round sizing](references/statistics.md), [profiling](../profiling/SKILL.md) for mechanism and [quality checks](../proving-correctness/SKILL.md) for eligibility.
 
 **GPU approval:** benchmarks, `ceiling bw`, `--gpu-bw measure` and gates run only with `budget.approved: true` in `intake.yaml` or an explicit yes after you stated the cost (GPU, $/h x hours). Record who approved and when.
 
@@ -37,18 +35,18 @@ Speed numbers that survive review: a timer outside the engine, one precision for
 - [ ] Approval recorded; `inferencekit doctor` this session -> ev_env.
 - [ ] Nothing else on the GPU or host CPUs while timing (they shift latency by tens of percent); the client on pinned cores or another host.
 - [ ] Engines and model pinned in `runs/<id>/manifest.json`; `inferencekit manifest validate` passes.
-- [ ] Named official artifacts match the publisher's release and checksum. Record weight, activation and compute precision by stage, and the device placement actually observed in the runtime. Label community exports, local partial conversions and fallback runs explicitly.
+- [ ] Verify artifacts, precision and runtime placement via the [baseline checklist](../optimizing-inference/SKILL.md#3-establish-the-strongest-baseline).
 - [ ] Same precision (weights, activations, KV, lm_head) for every engine, or a numerics change the task allows, labelled "numerics changed"; the same sampling and seed for every engine (`--extra-body`: the workload's, else `generation_config.json` defaults); each baseline at its best documented config for the goal.
 - [ ] Prompt set verified (`inferencekit prompts verify --set <dev|path>`), identical for every engine.
 - [ ] Claim written first: metric, bucket, threshold, decision rule, round count R.
 
 ## Hard failure gates
 
-Any of these makes a record unusable for a speed claim; stop and report it:
+These invalidate a speed claim. Retain runnable timings with their failed checks as diagnostics.
 - A setting not proven in effect from the resolved config or log, or CUDA graphs off where the engine supports them.
 - Generated tokens per request differ from the requested `max_tokens`, or token counts disagree between methods.
 - Repeated prompts inside a load level, or a prefix/response cache serving repeats.
-- Precision, model revision, GPU type or prompt set differ between the engines compared.
+- Precision, model revision, device, backend placement or prompts differ between engines.
 - Fewer completed rounds than pre-registered, rounds not interleaved, or warmups counted. R is intake `workload.rounds` (default 5, never below 3; kernel-loop milestones excepted), sized with `n ~= (2.5c/h)^2` and passed as `--rounds R`, or an adaptive plan pre-registered as `--ci-target`, `--min-rounds` and a maximum `--rounds` ([references/statistics.md](references/statistics.md)).
 - A profiler or debugger attached, or the GPU shared during timing.
 - Any `inferencekit gates run` FAIL: each gate catches a known way to improve the number without improving the engine.
