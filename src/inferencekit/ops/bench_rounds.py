@@ -283,7 +283,7 @@ def bench_rounds(call, manifest, prompts, rounds, mode, engines, run_dir, gpu_lo
                            "without schema validation")
     cells = [{k: c.get(k) for k in ("round", "position", "label", "kind", "status", "served_model", "ready",
                                      "warmup", "serve", "stop", "gpu_memory", "resolved_config", "env", "log",
-                                     "metrics_source", "load_schedule", "t_start", "t_end", "detail", "resources", "server_env", "audio", "image")}
+                                     "metrics_source", "load_schedule", "t_start", "t_end", "detail", "resources", "server_env", "audio", "image", "stt")}
              for c in result["cells"]]
     if load:
         claim_classes = {"<metric>": "derived (median over rounds of bench serve's capacity record: N* and the "

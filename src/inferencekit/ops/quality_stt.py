@@ -196,9 +196,9 @@ def quality_stt(call, baseline, candidate, fixtures, protocol, run_dir):
     a, ar, ai = capture(store, baseline, fixture_rows, fixture_sha)
     b, br, bi = capture(store, candidate, fixture_rows, fixture_sha)
     model_a, model_b = a["identity"]["model"], b["identity"]["model"]
-    if (a["data"]["stt_config"]["settings"] != b["data"]["stt_config"]["settings"]
+    if (a["data"]["stt_config"] != b["data"]["stt_config"]
             or any(model_a[k] != model_b[k] for k in ("id", "revision"))):
-        raise OpError("STT quality arms must match checkpoint and decoding settings")
+        raise OpError("STT quality arms must match checkpoint, streaming mode and decoding settings")
     if not policy["allow_numerics_change"] and any(model_a[k] != model_b[k] for k in ("dtype", "quant")):
         raise OpError("STT numerical changes require pre-registered allow_numerics_change")
     if any(ai[i]["seed"] != bi[i]["seed"] for i in ai.keys() & bi.keys()):

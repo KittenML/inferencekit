@@ -551,6 +551,11 @@ def attach_evidence(run: Run, records: list[tuple[str, dict]]) -> None:
     from inferencekit.evidence import integrity_problem
 
     seen = set()
+    final_stt_labels = {
+        rec["data"].get("label") for _, rec in records
+        if isinstance(rec, dict) and rec.get("kind") == "stt_benchmark" and isinstance(rec.get("data"), dict)
+        and rec["data"].get("scheduler_final") and not integrity_problem(rec)
+    }
     for source, rec in records:
         if not isinstance(rec, dict) or not str(rec.get("evidence_id", "")).startswith("ev_"):
             continue
@@ -590,7 +595,7 @@ def attach_evidence(run: Run, records: list[tuple[str, dict]]) -> None:
             elif kind == "stt_benchmark" and data.get("source") in ("bench stt", "import stt"):
                 from inferencekit.review.stt import attach_benchmark
 
-                if not problem:
+                if not problem and (data.get("scheduler_final") or info.label not in final_stt_labels):
                     attach_benchmark(run, info, rec, source)
             elif kind in ("image_benchmark", "audio_benchmark"):
                 from inferencekit.review.media import attach_rows, attach_verdicts

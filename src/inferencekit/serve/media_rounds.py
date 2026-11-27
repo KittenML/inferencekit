@@ -152,7 +152,10 @@ def run_cell(spec: dict, k: int, position: int, cfg: dict) -> dict:
                         round_evidence.finite(row.get("n_failed")) and row["n_failed"] > 0):
                     cell["metrics"] = {"all": mets}
                 cfg["last_ev"][spec["label"]] = record["evidence_id"]
-                cell["continued_after_invalid"] = mode == "stt"
+                if mode == "stt":
+                    cell["stt"]["timing_status"] = "OBSERVED" if round_evidence.finite(row.get("stt_ms")) else "NOT RUN"
+                    cell["stt"]["violations"] = record.get("data", {}).get("claim_validity", {}).get("violations", [])
+                    cell["continued_after_invalid"] = True
                 cell["claim_valid"] = record.get("data", {}).get("claim_validity", {}).get("valid")
         cell["status"], detail = rr.cell_status(result.returncode, record, cell["metrics"])
         if cell.get("claim_valid") is not True and cell["status"] == "ok":
@@ -258,6 +261,15 @@ def run_media_rounds(manifest_path, prompts, mode, *, rounds=None, engines=None,
                     memory = cell.get("gpu_memory") or {}
                     cleanup_failed = (cell.get("stop", {}).get("group_gone") is False or
                                       memory.get("checked") is True and memory.get("returned") is False)
+                if mode == "stt" and not (cell.get("stt") or {}).get("timing_status"):
+                    observation = cell.setdefault("stt", {})
+                    observation["timing_status"] = "NOT RUN"
+                    ready = cell.get("ready") or {}
+                    observation["error"] = observation.get("stderr_tail") or cell.get("detail") or cell["status"]
+                    if ready.get("status") == "exited":
+                        observation["error"] = f"server exited before readiness (exit {ready['exit_code']})"
+                    elif ready.get("status") == "timeout":
+                        observation["error"] = f"readiness timed out (last response: {ready['last']})"
                 cells.append(cell)
                 (out / f"{label}.r{k}.json").write_text(json.dumps(ev.redact(cell), indent=2) + "\n")
     plan[f"{mode}_evidence_final"] = round_evidence.finalize_arm_records(cfg["last_ev"], cells, plan, cpu=cpu)
@@ -278,6 +290,11 @@ def run_media_rounds(manifest_path, prompts, mode, *, rounds=None, engines=None,
                      f"{rr._fmt(row['ci95'][0])}–{rr._fmt(row['ci95'][1])} | {row['n']}/{rounds} |")
     for label in labels:
         missing = [c["round"] for c in cells if c["label"] == label and c["status"] != "ok"]
+        if mode == "stt":
+            for cell in cells:
+                if cell["label"] == label and cell["stt"]["timing_status"] == "NOT RUN":
+                    reason = cell["stt"].get("error") or "; ".join(cell["stt"].get("violations", []))
+                    lines += ["", f"{label} round {cell['round']}: timing NOT RUN ({reason})."]
         if missing:
             lines += ["", f"{label}: incomplete rounds {missing}; excluded from ranking."]
     lines += ["", "Timing does not establish output quality or sustained reliability."]

@@ -49,7 +49,7 @@ def import_stt(call, timings, model, model_revision, model_dtype, model_quant, e
             text, error, effective = row.get("text", ""), row.get("error"), row.get("effective", {})
             if (type(index) is not int or not 0 <= index <= 100000 or (fixture.id, index) in seen or
                     row["audio_sha256"] != fixture.audio_sha or not isinstance(text, str) or
-                    not isinstance(effective, dict) or error is not None and not isinstance(error, str) or
+                    not isinstance(effective, dict) or error is not None and (not isinstance(error, str) or not error.strip()) or
                     not finite(elapsed) or elapsed <= 0 or
                     complete is not None and (not finite(complete) or not 0 < complete <= elapsed) or
                     partial is not None and (not stream or not finite(partial) or not 0 < partial <= (complete or elapsed)) or

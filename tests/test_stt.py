@@ -229,5 +229,8 @@ def test_stt_fresh_process_rounds(tmp_path, fixture_set, store, bad, monkeypatch
     assert all(row["stt_ms"] > 0 for row in candidate["data"]["rounds"])
     assert candidate["data"]["lifecycle"]["verdict"] == ("UNPROVEN" if bad else "PASS")
     cells = result["data"]["cells"]
-    assert [cell["status"] for cell in cells if cell["label"] == "candidate"] == [
-        "serve_failed" if bad else "ok"] * 4
+    candidate_cells = [cell for cell in cells if cell["label"] == "candidate"]
+    assert [cell["status"] for cell in candidate_cells] == ["serve_failed" if bad else "ok"] * 4
+    assert all(cell["stt"]["timing_status"] == "OBSERVED" for cell in candidate_cells)
+    if bad:
+        assert all("empty or missing transcript" in cell["stt"]["violations"] for cell in candidate_cells)
