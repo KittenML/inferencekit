@@ -7,12 +7,9 @@ Benchmark inference speed for: $ARGUMENTS
 
 Follow the benchmarking skill. Read `${CLAUDE_PLUGIN_ROOT}/skills/benchmarking/SKILL.md` (in a checkout of this repo: `plugin/skills/benchmarking/SKILL.md`) and its references before running anything.
 
-For speech recognition, use the [STT route](https://github.com/KittenML/inferencekit/blob/main/docs/media-benchmarks.md#speech-recognition).
-Register `quality stt-policy`, screen with `bench stt`, run `bench rounds --mode stt` and keep the transcript artifacts. Run `gates stt` on each engine and `quality stt` on the final arm IDs. Report completion time, RTF and WER/CER together.
+For speech recognition, follow the [STT benchmark and quality workflow](https://github.com/KittenML/inferencekit/blob/main/docs/media-benchmarks.md#speech-recognition).
 
-In every experiment (quantisation, precision, activation bit-width, kernel or graph change, approximation, any optimisation), measure the speed of every variant even when its quality fails or is broken. Never skip, defer or drop a timing because quality broke. Record quality and speed side by side, and label a broken-quality row as such, but still time it. If a timing truly cannot run (the build is refused, or it crashes), report it as NOT RUN with the exact error, never "skipped because of quality". Pass this rule verbatim into every subagent and workflow brief.
-
-Text steps:
+Steps:
 1. Restate the workload in one sentence: model + revision, precision (weights, activations, KV cache, lm_head), GPU, input buckets (default: the dev set's four, said so), output length, goal (single-user, or capacity with its SLO).
 2. Approval: `intake.yaml` with `budget.approved: true`, or the user's explicit yes to the GPU, $/h x hours and a cap. Without it, stop.
 3. Write the claim before measuring (metric, bucket, threshold, decision rule); with no comparison, "report the metrics and % of ceiling".

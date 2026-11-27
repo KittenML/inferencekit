@@ -101,6 +101,8 @@ The same operation is available over MCP with `image_tradeoff: true`. This is a 
 
 ## Speech recognition
 
+In every experiment (quantisation, precision, activation bit-width, kernel or graph change, approximation, any optimisation), measure the speed of every variant even when its quality fails or is broken. Never skip, defer or drop a timing because quality broke. Record quality and speed side by side, and label a broken-quality row as such, but still time it. If a timing truly cannot run (the build is refused, or it crashes), report it as NOT RUN with the exact error, never "skipped because of quality". Pass this rule verbatim into every subagent and workflow brief.
+
 Each JSONL row names an uncompressed PCM WAV relative to the fixture file and the expected text:
 
 ```json
@@ -128,7 +130,7 @@ inferencekit bench stt --base-url http://127.0.0.1:8000 --fixtures speech.jsonl 
   --model example/model --model-revision pinned-checkpoint --model-dtype fp32 --model-quant none \
   --engine-version pinned-engine --hardware-name 'Exact CPU model' --device cpu --rounds 1
 inferencekit bench rounds --mode stt --manifest runs/stt/manifest.json --prompts speech.jsonl \
-  --rounds 4 --warmup 1 --serve-args '--warmup-fixtures warmup.jsonl'
+  --rounds 4 --warmup 0
 inferencekit compare BASELINE_ID CANDIDATE_ID --metric rtf
 inferencekit quality stt --protocol POLICY_ID --baseline BASELINE_ID --candidate CANDIDATE_ID \
   --fixtures speech.jsonl --run-dir runs/stt
@@ -137,9 +139,10 @@ inferencekit report COMPARISON_ID QUALITY_ID --format md
 
 The manifest uses `workload.modes: ["stt"]`, each engine's `endpoint_kind: "stt_http"`, and
 `workload.quant` plus model and engine pins. Use `workload.stream: true` to time SSE
-or set `--stream` on direct calls. Warmup inputs must be distinct from the measured WAVs.
-Get the per-arm benchmark IDs from `plan.stt_evidence_final`. The scheduler attempts every live
-arm even when transcript validation fails, and invalid rows remain visible with diagnostic timing.
+or set `--stream` on direct calls. To warm up, set a positive `--warmup` and pass
+`--warmup-fixtures warmup.jsonl` through `--serve-args`. Use WAVs separate from the measured fixtures.
+Get the per-engine benchmark IDs from `plan.stt_evidence_final`. The scheduler attempts every live
+engine even when transcript validation fails, and invalid rows remain visible with diagnostic timing.
 The default `--save-outputs all` retains text for quality and review. Check these artifacts before sharing.
 
 The client measures complete HTTP response time. Streaming additionally measures arrival of the first
