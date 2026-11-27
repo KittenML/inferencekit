@@ -140,9 +140,9 @@ def _limitations(result: dict) -> tuple[list[str], list[str]]:
             Arg("prompts", "string", "Shared JSONL prompt, speech, image or clip fixture set.", required=True),
             Arg("rounds", "integer", "Rounds; each runs every engine once. Default: the smallest multiple of the "
                 "Williams period that is at least 3, so the order is balanced (2 engines: 4, 3: 6, 4: 4, 5: 10)."),
-            Arg("mode", "string", "Client: single/load text, audio, image or clip. Auto reads manifest modes, "
+            Arg("mode", "string", "Client: single/load text, audio, STT, image or clip. Auto reads manifest modes, "
                 "modality, intake modality or endpoint kind; ambiguous modes require a selection.",
-                default="auto", choices=("auto", "single", "load", "clip", "audio", "image")),
+                default="auto", choices=("auto", "single", "load", "clip", "audio", "stt", "image")),
             Arg("device", "string", "Hardware route; auto reads hardware.backend from the manifest.", default="auto",
                 choices=("auto", "cpu", "gpu")),
             Arg("cpu_lock", "string", "CPU-exclusive advisory lock (default $INFERENCEKIT_CPU_LOCK or ~/.cache/inferencekit/cpu.lock)."),
@@ -194,7 +194,7 @@ def bench_rounds(call, manifest, prompts, rounds, mode, engines, run_dir, gpu_lo
     mode = media_rounds.mode_for(declared, mode, manifest)
     if device == "cpu" and mode == "load":
         raise OpError("CPU load mode is not supported yet: capacity metrics use GPU denominators; use --mode single")
-    if mode in ("clip", "audio", "image"):
+    if mode in ("clip", "audio", "stt", "image"):
         unsupported = [flag for flag, value in (("--ci-target", ci_target), ("--min-rounds", min_rounds),
                                                 ("--ref-e2e-ms", ref_e2e_ms),
                                                 ("--chat-template-kwargs", chat_template_kwargs),
@@ -210,7 +210,7 @@ def bench_rounds(call, manifest, prompts, rounds, mode, engines, run_dir, gpu_lo
                                  clip_args=serve_args, clip_cmd=serve_cmd, gpu_mem_tolerance_mib=gpu_mem_tolerance_mib,
                                  resource_mode=device, cpu_lock_path=cpu_lock)
     others = [] if device == "cpu" else gpu_processes()
-    media = mode in ("audio", "image")
+    media = mode in media_rounds.METRICS
     if media:
         result = media_rounds.run_media_rounds(manifest, prompts, mode, rounds=rounds, engines=engines,
                            run_dir=run_dir, device=device, cpu_lock=cpu_lock, gpu_lock=gpu_lock,
@@ -283,7 +283,7 @@ def bench_rounds(call, manifest, prompts, rounds, mode, engines, run_dir, gpu_lo
                            "without schema validation")
     cells = [{k: c.get(k) for k in ("round", "position", "label", "kind", "status", "served_model", "ready",
                                      "warmup", "serve", "stop", "gpu_memory", "resolved_config", "env", "log",
-                                     "metrics_source", "load_schedule", "t_start", "t_end", "detail", "resources", "server_env", "audio", "image")}
+                                     "metrics_source", "load_schedule", "t_start", "t_end", "detail", "resources", "server_env", "audio", "image", "stt")}
              for c in result["cells"]]
     if load:
         claim_classes = {"<metric>": "derived (median over rounds of bench serve's capacity record: N* and the "

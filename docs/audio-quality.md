@@ -131,3 +131,34 @@ For an independent exact PCM control, pass the repeat baseline capture with `--b
 ## Import native PCM
 
 Run `inferencekit import audio --help` for the saved WAV or PCM import. Match the synthesis settings and seed base across arms, then pass the evidence IDs to `quality audio`. The import retains PCM and declared provenance for quality and carries no timing measurements. Use a policy registered before the declared capture start for an acceptance verdict.
+
+## Speech recognition quality
+
+Write a JSON policy and run `inferencekit quality stt-policy --policy stt-policy.json --fixtures speech.jsonl`
+before capture. A policy binds the fixture WAV and reference hashes, normalization, the acceptance rule,
+a minimum fixture and paired-round count, bootstrap resamples and seed. For example:
+
+```json
+{"acceptance":"wer_noninferiority","normalization":"whisper_english_v1","wer_increase_max":0.01,
+ "completion_failure_increase_max":0,"min_fixtures":100,"min_rounds":4,"resamples":2000,"seed":0}
+```
+
+Choose `exact` for identical normalized transcripts, `wer_noninferiority` with
+`wer_increase_max` or `cer_noninferiority` with `cer_increase_max`. The reference-text WER
+and CER of both arms remain visible. A paired bootstrap resamples fixtures with every paired
+round retained. A CI at or below the maximum degradation passes, a CI entirely above it
+fails, and an interval crossing the maximum leaves acceptance UNPROVEN. Late registration,
+missing transcript outputs or missing fixture/round coverage cannot establish acceptance.
+Empty normalized or failed transcripts count as completion failures and as deletions for word
+and character error scoring. `allow_numerics_change` permits comparing quality across declared
+dtypes or quantization recipes with matched checkpoint and decoding settings.
+
+Supported normalizations are `whitespace_v1`, `nfkc_casefold_punctuation_v1`,
+`whisper_english_v1` (pinned Whisper English number, spelling and contraction rules),
+and `indic_cer_v1` (Unicode normalization with nukta and zero-width joiner variants removed).
+CER counts Unicode code points after whitespace removal.
+
+Use `inferencekit quality stt --protocol POLICY_ID --baseline BASELINE_ID --candidate CANDIDATE_ID
+--fixtures speech.jsonl` with the two retained transcript captures from the
+[STT benchmark workflow](media-benchmarks.md#speech-recognition). Reports attach the verdict
+to its exact comparison pair. `review build` can show request times, text and reference diffs.

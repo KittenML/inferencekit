@@ -1,4 +1,4 @@
-"""Fresh-process audio/image cells using the existing client timers and Williams order."""
+"""Fresh-process media cells using the existing client timers and Williams order."""
 from __future__ import annotations
 
 import json
@@ -12,12 +12,14 @@ from pathlib import Path
 from inferencekit import evidence as ev, proc
 from inferencekit.canonical import file_sha256
 from inferencekit.cpuinfo import cpu_identity
+from inferencekit.ops.bench_stt import METRICS as STT_METRICS
 from inferencekit.registry import OpError
 from inferencekit.serve import resources, round_evidence, rounds as rr, servers
 
 METRICS = {
     "audio": {"audio_ms": "ms", "first_audio_p95_ms": "ms", "first_pcm_p95_ms": "ms", "rtf": "x"},
     "image": {"image_ms": "ms", "images_per_hour": "images/h"},
+    "stt": STT_METRICS,
 }
 
 
@@ -39,7 +41,7 @@ def mode_for(manifest: dict, requested: str, manifest_path: str) -> str:
             except (ValueError, OSError):
                 raise OpError("cannot read intake.normalized.json for automatic modality routing") from None
     if modality:
-        mode = {"tts": "audio", "audio": "audio", "image": "image", "video": "clip",
+        mode = {"tts": "audio", "audio": "audio", "image": "image", "video": "clip", "stt": "stt",
                 "text": "single", "llm": "single"}.get(modality)
         if mode is None:
             raise OpError(f"no bench rounds client for modality {modality}; select a supported --mode")
@@ -47,6 +49,8 @@ def mode_for(manifest: dict, requested: str, manifest_path: str) -> str:
     kinds = {e.get("endpoint_kind") for e in manifest.get("engines", [])} - {None}
     if kinds == {"audio_http"}:
         return "audio"
+    if kinds == {"stt_http"}:
+        return "stt"
     if kinds == {"image_http"}:
         return "image"
     if kinds and kinds <= {"clip_http", "comfyui"}:
@@ -62,29 +66,34 @@ def media_argv(mode: str, ctx: dict, template: str | None, extra: str | None) ->
                  "--extend", "--endpoint-id", "--device", "--hardware-name", "--gpu-name", "--run-dir",
                  "--model-revision", "--model-dtype", "--model-quant", "--dtype", "--quant", "--engine-version",
                  "--seed-base", "--seed-policy", "--seeds", "--sample-rate", "--channels", "--settings", "--warmup",
-                 "--gpu-count"}
+                 "--gpu-count", "--stream"}
     if any(w.split("=", 1)[0] in protected for w in extra_words):
         raise OpError("media --serve-args cannot override scheduler identity, rounds, seeds or workload settings")
+    speech = mode in ("audio", "stt")
     words = shlex.split(template) if template else [sys.executable, "-m", "inferencekit", "bench", mode]
     if any("{" in w or "}" in w for w in words):
-        raise OpError("audio/image --serve-cmd replaces the program only; scheduler arguments are always appended")
-    argv = words + ["--base-url", ctx["base_url"], "--fixtures" if mode == "audio" else "--prompts", ctx["prompts"],
+        raise OpError("media --serve-cmd replaces the program only; scheduler arguments are always appended")
+    argv = words + ["--base-url", ctx["base_url"], "--fixtures" if speech else "--prompts", ctx["prompts"],
                     "--model", ctx["model"], "--label", ctx["label"], "--rounds", "1",
                     "--first-round", str(ctx["first_round"]), "--warmup", str(ctx["warmup"]),
                     "--seed-base", str(ctx["seed"]), "--device", ctx["device"]]
     if ctx.get("run_dir"):
         argv += ["--run-dir", ctx["run_dir"]]
     for key, flag in (("revision", "--model-revision"), ("engine_version", "--engine-version"),
-                      ("extend", "--extend"), ("precision", "--model-dtype" if mode == "audio" else "--dtype"),
-                      ("quant", "--model-quant" if mode == "audio" else "--quant")):
+                      ("extend", "--extend"), ("precision", "--model-dtype" if speech else "--dtype"),
+                      ("quant", "--model-quant" if speech else "--quant")):
         if ctx.get(key):
             argv += [flag, str(ctx[key])]
-    argv += ["--hardware-name" if mode == "audio" or ctx["device"] == "cpu" else "--gpu-name", ctx["hardware"]]
+    argv += ["--hardware-name" if speech or ctx["device"] == "cpu" else "--gpu-name", ctx["hardware"]]
     if ctx["device"] == "gpu":
         argv += ["--gpu-count", str(ctx.get("gpu_count", 1))]
     if mode == "audio":
         argv += ["--endpoint-id", ctx["label"], "--sample-rate", str(ctx["sample_rate"]),
                  "--channels", str(ctx["channels"]), "--settings", json.dumps(ctx["settings"])]
+    if mode == "stt":
+        argv += ["--endpoint-id", ctx["label"], "--settings", json.dumps(ctx["settings"])]
+        if ctx.get("stream"):
+            argv.append("--stream")
     return argv + extra_words
 
 
@@ -138,11 +147,15 @@ def run_cell(spec: dict, k: int, position: int, cfg: dict) -> dict:
                         for name, unit in METRICS[mode].items() if round_evidence.finite(row.get(name))}
                 mets["failed_requests"] = {"value": row.get("n_failed", 0), "unit": "requests", "n": cfg["n"]}
                 # Older compatible speech clients have the original timing columns.
-                required_metrics = METRICS[mode].keys() - {"first_pcm_p95_ms"}
+                required_metrics = METRICS[mode].keys() - {"first_pcm_p95_ms", "first_partial_p95_ms"}
                 if all(round_evidence.finite(row.get(name)) for name in required_metrics) or (
                         round_evidence.finite(row.get("n_failed")) and row["n_failed"] > 0):
                     cell["metrics"] = {"all": mets}
                 cfg["last_ev"][spec["label"]] = record["evidence_id"]
+                if mode == "stt":
+                    cell["stt"]["timing_status"] = "OBSERVED" if round_evidence.finite(row.get("stt_ms")) else "NOT RUN"
+                    cell["stt"]["violations"] = record.get("data", {}).get("claim_validity", {}).get("violations", [])
+                    cell["continued_after_invalid"] = True
                 cell["claim_valid"] = record.get("data", {}).get("claim_validity", {}).get("valid")
         cell["status"], detail = rr.cell_status(result.returncode, record, cell["metrics"])
         if cell.get("claim_valid") is not True and cell["status"] == "ok":
@@ -173,7 +186,7 @@ def run_media_rounds(manifest_path, prompts, mode, *, rounds=None, engines=None,
     device = round_evidence.resource_mode(manifest, device)
     specs = rr.engine_specs(manifest, engines)
     if mode not in METRICS or not specs:
-        raise OpError("media rounds requires audio/image mode and at least one engine")
+        raise OpError("media rounds requires a supported mode and at least one engine")
     rounds = rr.default_rounds(len(specs)) if rounds is None else rounds
     if not 1 <= rounds <= 10000 or not 0 <= warmup <= 100:
         raise OpError("rounds must be 1..10000 and warmup 0..100")
@@ -190,6 +203,9 @@ def run_media_rounds(manifest_path, prompts, mode, *, rounds=None, engines=None,
     if mode == "audio":
         from inferencekit.ops.bench_audio import load_fixtures
         fixtures, _ = load_fixtures(prompts)
+    elif mode == "stt":
+        from inferencekit.ops.bench_stt import load_fixtures
+        fixtures, _ = load_fixtures(prompts)
     else:
         from inferencekit.ops.bench_image import load_image_set
         fixtures = load_image_set(prompts)
@@ -205,7 +221,7 @@ def run_media_rounds(manifest_path, prompts, mode, *, rounds=None, engines=None,
               "gpu_count": hardware.get("count", 1),
               "device": device, "seed": workload.get("seed", 0), "warmup": warmup,
               "sample_rate": workload.get("sample_rate", 44100), "channels": workload.get("channels", 1),
-              "settings": workload.get("settings", {})}
+              "settings": workload.get("settings", {}), "stream": workload.get("stream", False)}
     # Validate all scheduler-owned arguments before launching any server.
     media_argv(mode, {**client, "base_url": "http://127.0.0.1:1", "label": "check", "first_round": 0},
                serve_cmd, serve_args)
@@ -240,11 +256,20 @@ def run_media_rounds(manifest_path, prompts, mode, *, rounds=None, engines=None,
                             "detail": "previous cell failed; preserving scheduled indices instead of renumbering"}
                 else:
                     cell = run_cell(by_label[label], k, position, cfg)
-                    if cell["status"] != "ok":
+                    if cell["status"] != "ok" and not cell.get("continued_after_invalid"):
                         failed.add(label)
                     memory = cell.get("gpu_memory") or {}
                     cleanup_failed = (cell.get("stop", {}).get("group_gone") is False or
                                       memory.get("checked") is True and memory.get("returned") is False)
+                if mode == "stt" and not (cell.get("stt") or {}).get("timing_status"):
+                    observation = cell.setdefault("stt", {})
+                    observation["timing_status"] = "NOT RUN"
+                    ready = cell.get("ready") or {}
+                    observation["error"] = observation.get("stderr_tail") or cell.get("detail") or cell["status"]
+                    if ready.get("status") == "exited":
+                        observation["error"] = f"server exited before readiness (exit {ready['exit_code']})"
+                    elif ready.get("status") == "timeout":
+                        observation["error"] = f"readiness timed out (last response: {ready['last']})"
                 cells.append(cell)
                 (out / f"{label}.r{k}.json").write_text(json.dumps(ev.redact(cell), indent=2) + "\n")
     plan[f"{mode}_evidence_final"] = round_evidence.finalize_arm_records(cfg["last_ev"], cells, plan, cpu=cpu)
@@ -265,6 +290,11 @@ def run_media_rounds(manifest_path, prompts, mode, *, rounds=None, engines=None,
                      f"{rr._fmt(row['ci95'][0])}–{rr._fmt(row['ci95'][1])} | {row['n']}/{rounds} |")
     for label in labels:
         missing = [c["round"] for c in cells if c["label"] == label and c["status"] != "ok"]
+        if mode == "stt":
+            for cell in cells:
+                if cell["label"] == label and cell["stt"]["timing_status"] == "NOT RUN":
+                    reason = cell["stt"].get("error") or "; ".join(cell["stt"].get("violations", []))
+                    lines += ["", f"{label} round {cell['round']}: timing NOT RUN ({reason})."]
         if missing:
             lines += ["", f"{label}: incomplete rounds {missing}; excluded from ranking."]
     lines += ["", "Timing does not establish output quality or sustained reliability."]

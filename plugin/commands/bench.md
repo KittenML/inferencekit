@@ -7,6 +7,8 @@ Benchmark inference speed for: $ARGUMENTS
 
 Follow the benchmarking skill. Read `${CLAUDE_PLUGIN_ROOT}/skills/benchmarking/SKILL.md` (in a checkout of this repo: `plugin/skills/benchmarking/SKILL.md`) and its references before running anything.
 
+For speech recognition, follow the [STT benchmark and quality workflow](https://github.com/KittenML/inferencekit/blob/main/docs/media-benchmarks.md#speech-recognition).
+
 Steps:
 1. Restate the workload in one sentence: model + revision, precision (weights, activations, KV cache, lm_head), GPU, input buckets (default: the dev set's four, said so), output length, goal (single-user, or capacity with its SLO).
 2. Approval: `intake.yaml` with `budget.approved: true`, or the user's explicit yes to the GPU, $/h x hours and a cap. Without it, stop.
@@ -16,7 +18,7 @@ Steps:
 6. `inferencekit prompts verify --set dev` (or `--set <path>`); pass the printed path as `--prompts`.
 7. Single-user: `inferencekit bench rounds --manifest runs/<id>/manifest.json --prompts <set.jsonl> --rounds <R> --mode single` (R pre-registered: default 5, never below 3; a fresh engine per round, Williams order), never a bare `bench serve` with its default `--rounds`. Capacity: `--mode load` with the skill's `--serve-args` grid, SLO and price.
 8. Gates per engine, its server relaunched from its manifest line: `inferencekit gates run --base-url <its url> --engine <label> --run-dir runs/<id> --reference-engine <baseline label>`, then stop it. A FAIL voids that engine's numbers (say which gate); a live gate NOT RUN is not a pass.
-9. Comparisons: the `bench rounds` record's `<metric>_ratio_to_best` per bucket, with its paired CI95. `inferencekit compare` accepts matching decode, single-user serve, clip, image or audio records; use `bench rounds`' own results for its aggregate, and do not pass load-mode records. Never across precisions, except an evaluating-quantization format trade-off (with its quality verdict, labelled, no `improved` / `regressed`).
+9. Comparisons: the `bench rounds` record's `<metric>_ratio_to_best` per bucket, with its paired CI95. `inferencekit compare` accepts matching decode, single-user serve, clip, image, audio or STT records; use `bench rounds`' own results for its aggregate, and do not pass load-mode records. Never across precisions, except an evaluating-quantization format trade-off (with its quality verdict, labelled, no `improved` / `regressed`).
 10. Engines without a server only: `inferencekit bench decode` (`--rounds 1 --extend <ev>` chains alternated between engines, then `compare`), labelled "engine-timed" everywhere.
 11. Finish with the skill's fixed tables, the claim verdict (PASS / FAIL / UNPROVEN / NOT RUN), every number observed / derived / inferred with its evidence id, and `inferencekit report <ids...> --format md`.
 

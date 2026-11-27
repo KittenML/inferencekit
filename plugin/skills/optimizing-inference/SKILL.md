@@ -71,7 +71,7 @@ For build routes, text uses the [engine skeleton](../optimizing-kernels/skeleton
 
 ## 4. Screen and measure
 
-For phone speech concurrency use the [on-device speech capacity protocol](../inference-triage/references/phones.md). Use [harness-commands.md](references/harness-commands.md) for text, [affordability.md](references/affordability.md) for image/audio and [video.md](references/video.md) for video. Screen representative cases before full rounds. Text screens include `short` and `long` lengths. Promote secondary wins the user values without hiding the lead metric.
+For phone speech concurrency use the [on-device speech capacity protocol](../inference-triage/references/phones.md). Use [harness-commands.md](references/harness-commands.md) for text, [affordability.md](references/affordability.md) for image/audio and [video.md](references/video.md) for video. For speech recognition, follow the [STT workflow](https://github.com/KittenML/inferencekit/blob/main/docs/media-benchmarks.md#speech-recognition). Screen representative cases before full rounds. Text screens include `short` and `long` lengths. Promote secondary wins the user values without hiding the lead metric.
 
 Final comparisons use balanced fresh-process rounds, excluded warmup, registered stopping and confidence intervals. Include complete output work and transfers/synchronization/decoding. [Capacity](references/capacity.md) needs its own tuning and measured concurrency.
 

@@ -56,7 +56,7 @@
           "ready_check": {"type": "string", "description": "HTTP path polled until it returns 200, e.g. /v1/models or /health."},
           "resolved_config": {"type": "object", "description": "What the engine logged it actually used."},
           "role": {"enum": ["baseline-recipe", "tuned", "custom"]},
-          "endpoint_kind": {"enum": ["clip_http", "comfyui", "audio_http", "image_http", "openai_chat"], "description": "Client contract for bench rounds. Audio and image use the contracts in docs/media-benchmarks.md."},
+          "endpoint_kind": {"enum": ["clip_http", "comfyui", "audio_http", "stt_http", "image_http", "openai_chat"], "description": "Client contract for bench rounds. Audio and image use the contracts in docs/media-benchmarks.md."},
           "workflow": {"type": "string", "description": "comfyui: the API-format workflow JSON (a path relative to the manifest is resolved there)."}
         }
       }
@@ -70,8 +70,9 @@
       ],
       "additionalProperties": false,
       "properties": {
-        "modes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["single", "load", "clip", "audio", "image"]}},
-        "modality": {"enum": ["llm", "text", "tts", "audio", "image", "video"]},
+        "modes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["single", "load", "clip", "audio", "stt", "image"]}},
+        "modality": {"enum": ["llm", "text", "tts", "audio", "stt", "image", "video"]},
+        "stream": {"type": "boolean", "description": "STT: Measure SSE first-partial latency as well as completion."},
         "sample_rate": {"type": "integer", "minimum": 1},
         "channels": {"type": "integer", "minimum": 1, "maximum": 8},
         "settings": {"type": "object", "description": "Audio/image generation settings passed unchanged to every arm."},

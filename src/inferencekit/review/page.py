@@ -39,8 +39,8 @@ SPEED = {
     "tts": [(("ttfa_ms", "ttfa_p50_ms"), "TTFA", "ms", False), (("rtf",), "RTF", "", False),
             (("first_pcm_ms",), "first PCM", "ms", False),
             (("chars_s", "chars_per_s"), "chars", "/s", True)],
-    "stt": [(("rtf",), "RTF", "", False), (("first_partial_ms",), "first partial", "ms", False),
-            (("final_ms", "finalization_ms"), "final", "ms", False)],
+    "stt": [(("rtf",), "RTF", "", False), (("first_partial_ms", "first_partial_p95_ms"), "first partial", "ms", False),
+            (("final_ms", "finalization_ms", "stt_ms"), "final", "ms", False)],
     "video": [(("clip_s",), "clip", "s", False), (("clips_per_hour",), "clips", "/h", True)],
     "image": [(("image_ms", "e2e_ms"), "image", "ms", False),
               (("images_per_hour",), "images", "/h", True)],
@@ -55,7 +55,7 @@ CHIPS = [(("ttft_ms",), "TTFT", "ms"), (("decode_tok_s", "tok_s"), "decode", "to
          (("max_stream_gap_ms",), "max stream gap", "ms"), (("underrun_ms",), "simulated stall", "ms"),
          (("max_gap_ms", "gap_ms"), "max gap", "ms"), (("underruns",), "underruns", ""), (("wer",), "WER", ""),
          (("cer",), "CER", ""), (("utmos", "mos"), "MOS", ""), (("sim", "speaker_sim"), "spk sim", ""),
-         (("lufs",), "LUFS", ""), (("first_partial_ms",), "first partial", "ms"), (("final_ms",), "final", "ms")]
+         (("lufs",), "LUFS", ""), (("first_partial_ms", "first_partial_p95_ms"), "first partial", "ms"), (("final_ms",), "final", "ms")]
 MAX_EXTRA_CHIPS = 4
 PREVIEW_CHARS = 160
 
@@ -469,7 +469,7 @@ def input_html(run: Run, item: Item) -> str:
                          f'<div class="text">{esc(text)}</div></details>')
         else:
             parts.append(f'<div class="text">{esc(text)}</div>')
-    elif not item.audio and not item.clip:
+    elif not item.audio and not item.clip and not (run.modality == "stt" and item.ground_truth):
         parts.append('<div class="why">input file not found under inputs/</div>')
     if item.ground_truth and run.modality == "stt":
         parts.append(f'<div class="gt"><b>ground truth:</b> {esc(item.ground_truth)}</div>')
@@ -486,7 +486,7 @@ def speed_buckets(run: Run) -> list[str]:
 def bucket_title(run: Run, b: str) -> str:
     if b == "all" and run.modality == "video":
         return "all rounds"
-    if run.modality in ("video", "image", "tts") and ROUND_DIR.match(b):
+    if run.modality in ("video", "image", "tts", "stt") and ROUND_DIR.match(b):
         return f"round {b[1:]}"
     return b.replace("_", " ")
 
