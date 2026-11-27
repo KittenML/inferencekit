@@ -66,6 +66,7 @@ TARGETS = {
     "image_ms": ("lower", "ms per image"),
     "images_per_hour": ("higher", "images/h"),
     "rtf": ("lower", "x real time"),
+    "first_partial_ms": ("lower", "ms"),
     "usd_per_1m": ("lower", "USD per 1M units"),
     "clip_ms": ("lower", "ms per clip"),
     "clips_per_hour": ("higher", "clips/h"),
@@ -73,7 +74,7 @@ TARGETS = {
 MODALITY_TARGETS = {
     "llm": {"decode_tok_s", "ttft_ms", "n_star", "decode_ceiling_fraction", "usd_per_1m"},
     "tts": {"ttfa_ms", "ttfa_p95_ms", "rtf", "n_star", "audio_s_per_s", "usd_per_1m"},
-    "stt": {"rtf", "n_star", "usd_per_1m"},
+    "stt": {"rtf", "first_partial_ms", "audio_s_per_s", "n_star", "usd_per_1m"},
     "video": {"clip_ms", "clips_per_hour"},
     "image": {"image_ms", "images_per_hour"},
 }
@@ -394,7 +395,7 @@ def normalize(data: dict) -> tuple[dict, list[str], list[str]]:
                         "but unused by its timing client")
     wl.setdefault("rounds", 5)
     client = wl.get("client")
-    expected_client = {"llm": "bench_serve", "tts": "bench_audio", "image": "bench_image", "video": "bench_clip"}
+    expected_client = {"llm": "bench_serve", "tts": "bench_audio", "stt": "bench_stt", "image": "bench_image", "video": "bench_clip"}
     allowed_clients = {None, "external", expected_client.get(modality)}
     if modality == "tts":
         allowed_clients.add("audio_capacity")
@@ -571,7 +572,7 @@ def normalize(data: dict) -> tuple[dict, list[str], list[str]]:
     cands.setdefault("exclude", [])
     cands.setdefault("max_engines", 5)
     if modality in ("tts", "stt") and client is None:
-        hint = "configure workload.client: bench_audio or audio_capacity for speech synthesis, or external" if modality == "tts" else "configure workload.client: external for speech recognition"
+        hint = "configure workload.client: bench_audio or audio_capacity for speech synthesis, or external" if modality == "tts" else "configure workload.client: bench_stt or external for speech recognition"
         warnings.append(f"modality {modality}: no audio timing client is configured; {hint}. "
                         "Audio latency claims without a matching client are UNPROVEN")
     if modality == "tts" and client == "bench_audio":
@@ -809,6 +810,8 @@ def derive(intake: dict) -> dict:
         modes = ["audio"]
     if intake["modality"] == "tts" and intake["workload"].get("client") == "audio_capacity":
         modes = ["audio_capacity"]
+    if intake["modality"] == "stt" and intake["workload"].get("client") == "bench_stt":
+        modes = ["stt"]
     if intake["modality"] == "video":
         modes = ["clip"]  # bench rounds --mode clip: one clip at a time
     questions = []

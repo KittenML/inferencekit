@@ -60,7 +60,7 @@ def claims_of(rec: dict, expect: str, integrity: dict) -> list[dict]:
             verdict, reason = "UNPROVEN", reason + "; an arm violates hard gates"
         out.append({"source": eid, "claim": f"candidate vs baseline ({expect})", "verdict": verdict,
                     "reason": reason})
-        if data.get("source_kind") in ("image_benchmark", "audio_benchmark"):
+        if data.get("source_kind") in ("image_benchmark", "audio_benchmark", "stt_benchmark"):
             for claim, proof in data.get("required_proofs", {}).items():
                 out.append({"source": eid, "claim": claim, "verdict": proof,
                             "reason": "Bound scheduler records confirm fresh launches, readiness and process-group cleanup."
@@ -89,6 +89,19 @@ def claims_of(rec: dict, expect: str, integrity: dict) -> list[dict]:
         out.append({"source": eid, "claim": "media quality and usability",
                     "verdict": "UNPROVEN", "reason": "Timing and structural checks do not establish image quality, "
                     "speech intelligibility, speaker fidelity or repeated-run reliability; cite task-specific quality evidence."})
+    elif kind == "stt_benchmark" and data.get("source") in ("bench stt", "import stt"):
+        validity = data.get("claim_validity", {})
+        out.append({"source": eid, "claim": "complete transcripts and matching effective settings",
+                    "verdict": "PASS" if validity.get("valid") is True else "FAIL",
+                    "reason": "; ".join(validity.get("violations", []))})
+    elif kind == "quality_stt" and data.get("source") == "quality stt":
+        out.append({"source": eid, "claim": "transcript quality against matched references",
+                    "verdict": data.get("verdict", "UNPROVEN"),
+                    "reason": "Paired WER/CER, completion and the registered STT policy."})
+    elif kind == "stt_gates":
+        out.append({"source": eid, "claim": "STT live integrity probes",
+                    "verdict": data.get("verdict", "UNPROVEN"),
+                    "reason": "; ".join(f"{name}: {gate.get('verdict')}" for name, gate in data.get("gates", {}).items())})
     elif kind == "audio_capacity":
         out.append({"source": eid, "claim": "on-device speech capacity under the registered SLOs",
                     "verdict": data.get("verdict", "UNPROVEN"),
@@ -312,6 +325,20 @@ def build_report(recs: list[dict], expect: str, title: str) -> dict:
                 claim["verdict"] = stats.combine_claims([v[0] for v in verdicts] + ([prior] if prior == "FAIL" else []))
                 claim["claim"] = "speech quality preservation against baseline"
                 claim["reason"] = "; ".join(f"{q['evidence_id']}: {v[1]}" for q, v in zip(matched, verdicts))
+    stt_quality = [r for r in recs if r.get("kind") == "quality_stt" and
+                   r.get("data", {}).get("source") == "quality stt"]
+    for rec in recs:
+        data = rec.get("data", {})
+        if rec.get("kind") != "comparison" or data.get("source_kind") != "stt_benchmark":
+            continue
+        matched = [q for q in stt_quality if all(q["data"].get(k) == data.get(k) for k in ("baseline", "candidate"))]
+        if matched and not ev.integrity_problem(rec):
+            for claim in claims:
+                if claim["source"] == rec["evidence_id"] and claim["claim"] == "media quality":
+                    claim.update(claim="transcript quality against matched references",
+                                 verdict=stats.combine_claims(q["data"]["verdict"] if not ev.integrity_problem(q)
+                                                             else "UNPROVEN" for q in matched),
+                                 reason="; ".join(q["evidence_id"] for q in matched))
     verdict = stats.combine_claims(c["verdict"] for c in claims)
     results = []
     for r in recs:

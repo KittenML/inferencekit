@@ -53,7 +53,7 @@ KINDS = KINDS_V1 + ("serve_benchmark", "capacity", "gates", "quality_trajectory"
 KINDS += ("clip_benchmark", "clip_gates", "clip_quality", "clip_steps")
 # Client-timed images and speech. Structural validity never establishes semantic quality.
 KINDS += ("image_benchmark", "audio_benchmark", "rocprof_capture", "rocprof_summary")
-KINDS += ("quality_audio", "audio_capacity")
+KINDS += ("quality_audio", "audio_capacity", "stt_benchmark", "quality_stt", "stt_gates")
 # identity.workload fields: the v1 four are always present (null when unknown); the v2 serving fields
 # are written only when the operation knows them.
 WORKLOAD_V1 = ("prompt_len", "gen_len", "batch", "seed")

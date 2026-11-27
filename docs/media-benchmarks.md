@@ -98,3 +98,66 @@ inferencekit compare BASELINE_ID CANDIDATE_ID --metric image_ms --image-tradeoff
 ```
 
 The same operation is available over MCP with `image_tradeoff: true`. This is a **format/work tradeoff**, not a same-work engine comparison. The timing verdict is not a quality verdict: retain independent checks against the agreed quality budget, and report quality, lifecycle and reliability separately. Mismatched prompts, dimensions, model revision, seed policy, other settings, failed outputs or unverified interleaving still prevent a valid comparison. Older image records without the task hash require new records; do not fabricate a hash.
+
+## Speech recognition
+
+Each JSONL row names an uncompressed PCM WAV relative to the fixture file and the expected text:
+
+```json
+{"id":"read-01","audio":"clips/read-01.wav","reference_text":"The meeting starts at ten.","language":"en","unseen":true}
+```
+
+The client hashes exact WAV bytes and references. Only the WAV, model, language and temperature go to
+`POST /v1/audio/transcriptions` as multipart, with `response_format=json` and optional `stream=true`.
+The reference text stays with the benchmark. The JSON response returns `text`. Streaming sends
+`transcript.text.delta` events with `delta`, followed by `transcript.text.done` with the final `text`.
+The JSON response or terminal SSE event supplies an `effective` object:
+
+```json
+{"model":"example/model","model_revision":"pinned-checkpoint","language":"en","dtype":"fp32","quant":"none","engine_version":"pinned-engine","temperature":0,"audio_duration_s":1.2,"cache":false}
+```
+
+Supply actual effective settings from the server or an adapter to the server's pinned launch. Include
+`beam_size`, `vad_filter` and `chunking` when the plan declares them. inferencekit sends temperature and
+language per request. Configure the other decoding knobs at launch. A plain OpenAI-compatible server
+without the effective extension can still return diagnostic timings, but its claim validity fails.
+
+```bash
+inferencekit quality stt-policy --policy stt-policy.json --fixtures speech.jsonl --run-dir runs/stt
+inferencekit bench stt --base-url http://127.0.0.1:8000 --fixtures speech.jsonl \
+  --model example/model --model-revision pinned-checkpoint --model-dtype fp32 --model-quant none \
+  --engine-version pinned-engine --hardware-name 'Exact CPU model' --device cpu --rounds 1
+inferencekit bench rounds --mode stt --manifest runs/stt/manifest.json --prompts speech.jsonl \
+  --rounds 4 --warmup 1 --serve-args '--warmup-fixtures warmup.jsonl'
+inferencekit compare BASELINE_ID CANDIDATE_ID --metric rtf
+inferencekit quality stt --protocol POLICY_ID --baseline BASELINE_ID --candidate CANDIDATE_ID \
+  --fixtures speech.jsonl --run-dir runs/stt
+inferencekit report COMPARISON_ID QUALITY_ID --format md
+```
+
+The manifest uses `workload.modes: ["stt"]`, each engine's `endpoint_kind: "stt_http"`, and
+`workload.quant` plus model and engine pins. Use `workload.stream: true` to time SSE
+or set `--stream` on direct calls. Warmup inputs must be distinct from the measured WAVs.
+Get the per-arm benchmark IDs from `plan.stt_evidence_final`. The scheduler attempts every live
+arm even when transcript validation fails, and invalid rows remain visible with diagnostic timing.
+The default `--save-outputs all` retains text for quality and review. Check these artifacts before sharing.
+
+The client measures complete HTTP response time. Streaming additionally measures arrival of the first
+nonempty delta. `stt_ms` is mean request completion time per round, `first_partial_p95_ms`
+is the streaming p95, and `rtf` is summed wall time divided by summed input WAV duration.
+`audio_s_per_s` is its reciprocal. Failure rows retain elapsed time and retain completion
+time when the client consumed the full response. Invalid rows cannot support a speed claim.
+
+Run `inferencekit gates stt` with the same fixture, model and endpoint arguments on each live engine.
+The probes repeat audio under distinct request IDs, add seeded low-level noise, compare held-out
+and tuning WER, and check effective decode settings and duration. An optional cross-language probe
+records a warning using server-reported detection confidence. An `unseen` flag attests that a
+fixture was held out. Use both seen and unseen inputs for the held-out check.
+
+For device-side engines, `inferencekit import stt --help` describes the import. The JSON
+document uses `format: "inferencekit.import.stt.v1"`, `timer`, capture start/end Unix
+seconds (`capture_start_unix_s`, `capture_end_unix_s`) and `rows`. Each row has `id`,
+`round`, `audio_sha256`, `elapsed_ms`, `complete_ms`, `text`, `effective` and optional
+`first_partial_ms` or `error`. Retain failed rows with their elapsed time. Device timings
+and reported settings are capture attestations. Quality can use these transcripts, and the
+HTTP client speed comparison requires its own capture.

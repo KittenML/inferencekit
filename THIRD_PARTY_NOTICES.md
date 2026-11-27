@@ -72,6 +72,12 @@ Engine and tool licenses can change between versions: check the license of the e
 
 The source of the bandwidth microbenchmark (`src/inferencekit/cuda/bw_peak.cu`) is inferencekit's own code, licensed under Apache-2.0; it is compiled on your machine with your CUDA toolkit.
 
+## Whisper English normalization
+
+The Whisper English text normalization code and spelling table in
+`src/inferencekit/quality/_whisper_normalizers/` are from [OpenAI Whisper v20250625](https://github.com/openai/whisper/tree/31243bad24cc746f07d4c8bfdd2d974872cb1803/whisper/normalizers).
+They are MIT-licensed. The original license is bundled alongside the code. The vendored copy removes the unused basic tokenizer and replaces a three-token iterator with an equivalent standard-library iterator.
+
 ## Data shipped in the package
 
 The development prompt set under `src/inferencekit/prompts/` is built from public datasets. Every prompt item records its origin and license in its `source` field (`dataset/license`), and the set's manifest records its sha256. Those per-item licenses apply to the prompt texts.

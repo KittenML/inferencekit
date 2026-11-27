@@ -53,6 +53,9 @@
         "audio_benchmark",
         "audio_capacity",
         "quality_audio",
+        "stt_benchmark",
+        "quality_stt",
+        "stt_gates",
         "rocprof_capture",
         "rocprof_summary"
       ]

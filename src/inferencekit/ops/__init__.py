@@ -34,3 +34,7 @@ from inferencekit.ops import import_audio  # noqa: F401,E402
 from inferencekit.ops import quality_audio  # noqa: F401,E402
 from inferencekit.ops import audio_scorers  # noqa: F401,E402
 from inferencekit.ops import cpu  # noqa: F401,E402
+from inferencekit.ops import bench_stt  # noqa: F401,E402
+from inferencekit.ops import quality_stt  # noqa: F401,E402
+from inferencekit.ops import gates_stt  # noqa: F401,E402
+from inferencekit.ops import import_stt  # noqa: F401,E402

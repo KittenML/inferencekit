@@ -98,6 +98,7 @@ class EngineInfo:
     evidence: list = field(default_factory=list)       # evidence ids that mention this label
     clip_rows: dict = field(default_factory=dict)      # video: "r<k>/<id>" -> bench clip request row
     stages: dict = field(default_factory=dict)         # video: stage -> median ms over clips (self-reported)
+    stt_rows: dict = field(default_factory=dict)
     media_rows: dict = field(default_factory=dict)
     media_kind: str | None = None
     metric_classes: dict = field(default_factory=dict)
@@ -564,7 +565,11 @@ def attach_evidence(run: Run, records: list[tuple[str, dict]]) -> None:
         if problem:
             run.warnings.append(f"{source}: {problem}: its verdicts are shown as UNPROVEN")
         touched = []
-        if kind == "quality_trajectory":
+        if kind == "quality_stt" and data.get("source") == "quality stt":
+            from inferencekit.review.stt import attach_quality
+
+            touched += attach_quality(run, rec, problem)
+        elif kind == "quality_trajectory":
             for label, verdict in (data.get("verdicts") or {}).items():
                 info = run.engine(str(label))
                 if info is not None:
@@ -582,6 +587,11 @@ def attach_evidence(run: Run, records: list[tuple[str, dict]]) -> None:
             if kind == "clip_benchmark" and data.get("source") == "bench clip":
                 for key, row in clip_rows(run, rec, source).items():  # merged: quality clip may have come first
                     info.clip_rows.setdefault(key, {}).update(row)
+            elif kind == "stt_benchmark" and data.get("source") in ("bench stt", "import stt"):
+                from inferencekit.review.stt import attach_benchmark
+
+                if not problem:
+                    attach_benchmark(run, info, rec, source)
             elif kind in ("image_benchmark", "audio_benchmark"):
                 from inferencekit.review.media import attach_rows, attach_verdicts
 
@@ -599,7 +609,7 @@ def attach_evidence(run: Run, records: list[tuple[str, dict]]) -> None:
                                           info.label), "%"
                 info.ev_quality.append({"name": name, "unit": unit, "evidence": eid, "value": value,
                                         "verdict": "UNPROVEN" if problem else data.get("verdict")})
-            elif kind in ("gates", "clip_gates"):
+            elif kind in ("gates", "clip_gates", "stt_gates"):
                 gates = data.get("gates") or {}
                 info.ev_gates = {"verdict": "UNPROVEN" if problem else str(data.get("verdict") or "UNPROVEN"),
                                  "violations": [f"{g}: {v.get('verdict')}" for g, v in gates.items()
@@ -639,7 +649,7 @@ def artifact_lines(run: Run, rec: dict, source: str, role: str, what: str) -> li
     eid = rec["evidence_id"]
     if not art or not isinstance(art.get("path"), str) or ".." in Path(art["path"]).parts:
         return None
-    for base in (Store().run_dir(eid), run.root.parent / eid):
+    for base in (run.root / "artifacts" / eid, Store().run_dir(eid), run.root.parent / eid):
         path = base / art["path"]
         if not path.is_file():
             continue
@@ -827,7 +837,10 @@ def load_run(root: str | Path, reference: str | None = None, prompts: str | Path
     from inferencekit.review.media import merge_rows
 
     merge_rows(run)
-    run.modality = detect_modality(root, run.items, run.cells)
+    from inferencekit.review.stt import merge_transcripts
+
+    has_stt = merge_transcripts(run)
+    run.modality = "stt" if has_stt else detect_modality(root, run.items, run.cells)
     if run.modality == "llm" and not run.reference:
         run.warnings.insert(0, "no reference outputs (pass --reference LABEL or add outputs/reference/): "
                                "divergence is not marked")

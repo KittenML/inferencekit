@@ -50,14 +50,16 @@ from inferencekit.serve.round_evidence import MAX_ROUNDS, MAX_ROUND_INDEX, finit
 CLIP_METRICS = ("clip_ms", "clips_per_hour") + tuple(f"{m}_{t}" for t in CLIP_TASKS
                                                      for m in ("clip_ms", "clips_per_hour"))
 MEDIA_METRICS = {"image_benchmark": ("image_ms", "images_per_hour"),
-                 "audio_benchmark": ("audio_ms", "first_audio_p95_ms", "first_pcm_p95_ms", "rtf")}
+                 "audio_benchmark": ("audio_ms", "first_audio_p95_ms", "first_pcm_p95_ms", "rtf"),
+                 "stt_benchmark": ("stt_ms", "first_partial_p95_ms", "rtf", "audio_s_per_s")}
 HIGHER_IS_BETTER = {"decode_tok_s": True, "prefill_tok_s": True, "ttft_ms": False, "tpot_ms": False,
                     "total_ms": False, **{m: m.startswith("clips_per_hour") for m in CLIP_METRICS},
                     "image_ms": False, "images_per_hour": True, "audio_ms": False,
-                    "first_audio_p95_ms": False, "first_pcm_p95_ms": False, "rtf": False}
+                    "first_audio_p95_ms": False, "first_pcm_p95_ms": False, "rtf": False,
+                    "stt_ms": False, "first_partial_p95_ms": False, "audio_s_per_s": True}
 BENCH_KINDS = ("benchmark", "serve_benchmark", "clip_benchmark", *MEDIA_METRICS)
 UNITS = {**{m: "clips/h" for m in CLIP_METRICS if m.startswith("clips_per_hour")},
-         "images_per_hour": "images/h", "rtf": "x"}
+         "images_per_hour": "images/h", "rtf": "x", "audio_s_per_s": "audio s/s"}
 # Workload fields that must agree: bench decode's shape, then bench serve's (absent fields are None on both).
 SAME_WORKLOAD = ("prompt_len", "gen_len", "batch", "mode", "bucket", "prefix_cache", "endpoint_kind")
 # bench serve arguments that change which requests are sent or what they ask for (serve_benchmark only).
@@ -150,6 +152,11 @@ different numerical formats cannot become a same-precision engine speed claim.
         if validity.get("valid") is not True:
             out.append(f"{label} structural validity not proven")
     wa, wb = (r["identity"].get("workload") or {} for r in (a, b))
+    if a.get("kind") == b.get("kind") == "stt_benchmark":
+        if any(rec["data"].get("source") != "bench stt" for rec in (a, b)):
+            out.append("imported on-device timings are ineligible for a client-timed STT speed claim")
+        if a["data"].get("stt_config") != b["data"].get("stt_config"):
+            out.append("STT decoding settings or streaming mode differ")
     if image_tradeoff:
         ha, hb = ((w.get("image_task_set") or {}).get("sha256") for w in (wa, wb))
         if not ha or not hb or ha != hb:
@@ -351,8 +358,12 @@ def compare(call, baseline, candidate, metric, threshold, resamples, seed, image
         failed = sum(int(r.get("n_failed") or 0) for r in rows if isinstance(r, dict))
         if failed and rec.get("kind") in ("serve_benchmark", "clip_benchmark", *MEDIA_METRICS):
             # Round medians drop failed requests: an arm that fails the slow prompts would look faster.
-            reasons_inconclusive.append(f"{label} had {failed} failed request(s); its round medians exclude them, "
-                                        "so the arms did not time the same requests")
+            if rec.get("kind") == "stt_benchmark":
+                reasons_inconclusive.append(f"{label} had {failed} invalid STT responses; retained timings "
+                                            "are diagnostic only")
+            else:
+                reasons_inconclusive.append(f"{label} had {failed} failed request(s); its round medians exclude them, "
+                                            "so the arms did not time the same requests")
         elif failed:
             limitations.append(f"{label} had {failed} failed request(s); its round medians exclude them")
         validity = rec.get("data", {}).get("claim_validity") or {}

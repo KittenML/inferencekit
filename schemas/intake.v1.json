@@ -95,6 +95,7 @@
             "ttfa_p95_ms": {"type": "number", "exclusiveMinimum": 0, "description": "TTS: p95 client time to first playable audio, including preprocessing and buffering."},
             "image_ms": {"type": "number", "exclusiveMinimum": 0, "description": "Image: client time to final decoded image."},
             "images_per_hour": {"type": "number", "exclusiveMinimum": 0},
+            "first_partial_ms": {"type": "number", "exclusiveMinimum": 0},
             "rtf": {"type": "number", "exclusiveMinimum": 0, "description": "TTS/STT: real-time factor (compute time / audio time; lower is better)."},
             "usd_per_1m": {"type": "number", "exclusiveMinimum": 0, "description": "Cost per 1M output units (tokens, characters, audio-seconds)."},
             "clip_ms": {"type": "number", "exclusiveMinimum": 0, "description": "Video: client-timed end-to-end ms per clip at the intake's clip set (bench clip clip_ms; lower is better)."},
@@ -150,7 +151,7 @@
         "rounds": {"type": "integer", "minimum": 3, "default": 5},
         "concurrency": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 1}},
         "prompt_set": {"type": "string", "description": "LLM prompt set (default dev)."},
-        "client": {"enum": ["bench_serve", "bench_audio", "audio_capacity", "bench_image", "bench_clip", "external"], "description": "Configured timing client; selecting one declares the route, not successful measurement or quality proof."},
+        "client": {"enum": ["bench_serve", "bench_audio", "bench_stt", "audio_capacity", "bench_image", "bench_clip", "external"], "description": "Configured timing client; selecting one declares the route, not successful measurement or quality proof."},
         "tts": {
           "type": "object", "additionalProperties": false,
           "properties": {

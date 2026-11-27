@@ -234,7 +234,8 @@ Every CLI command is also an MCP tool with the same arguments. Text benchmarks, 
 | Language models | Benchmarks, gates, GSM8K, quality vs a reference | Yes |
 | Text-to-video | Per-clip timing, per-step check, final-clip PSNR | Yes |
 | Text-to-image | Client-timed decoded images and structural checks; external quality proof required | Yes: MOSS-Image-SFT on RX 9070 XT |
-| Speech models | Client-timed streamed PCM, first-signal latency, RTF and underruns; external quality proof required | Yes: Drama3 TTS on Apple M4 |
+| Speech synthesis | Client-timed streamed PCM, first-signal latency, RTF and underruns; external quality proof required | Yes: Drama3 TTS on Apple M4 |
+| Speech recognition | [Client-timed transcription, RTF and paired WER/CER](docs/media-benchmarks.md#speech-recognition) | Synthetic HTTP fixtures |
 | Claude Code | Supported | Yes |
 | Codex | Supported | Yes: AMD and Mac case studies |
 | OpenCode | Install path and CI install checks | No |
@@ -244,7 +245,7 @@ Profiles and logs can contain environment variables, host names and paths: scan 
 ## Roadmap
 
 - **More hardware:** H100, H200, B200, RTX 4090, Intel GPUs and Jetson, with the hardware tools (`doctor`, `ceiling bw`, profiling) for each.
-- **Broader workload coverage:** more speech, image and video models, including speech recognition (STT).
+- **Broader workload coverage:** more speech, image and video models.
 - **Multi-user serving:** published results for many users at once (load sweeps), not just one user at a time.
 - **Token and time efficiency:** further reduce agent token usage and turnaround time with reusable scripts, compact tool output and focused context.
 - **OpenCode end to end.**
